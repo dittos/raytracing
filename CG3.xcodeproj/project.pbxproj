@@ -8,23 +8,28 @@
 
 /* Begin PBXBuildFile section */
 		2762F2251AF08EBA00494F2C /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2762F2241AF08EBA00494F2C /* main.cpp */; };
+		2762F22D1AF08EDD00494F2C /* GLUT.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2762F22B1AF08EDD00494F2C /* GLUT.framework */; };
+		2762F22E1AF08EDD00494F2C /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2762F22C1AF08EDD00494F2C /* OpenGL.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		2762F21F1AF08EBA00494F2C /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 16;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 1;
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2762F2211AF08EBA00494F2C /* CG3 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = CG3; sourceTree = BUILT_PRODUCTS_DIR; };
 		2762F2241AF08EBA00494F2C /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		2762F22B1AF08EDD00494F2C /* GLUT.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLUT.framework; path = System/Library/Frameworks/GLUT.framework; sourceTree = SDKROOT; };
+		2762F22C1AF08EDD00494F2C /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
+		27DFA3D81B0071BD0051000A /* glm */ = {isa = PBXFileReference; lastKnownFileType = folder; path = glm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +37,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2762F22D1AF08EDD00494F2C /* GLUT.framework in Frameworks */,
+				2762F22E1AF08EDD00494F2C /* OpenGL.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -41,6 +48,8 @@
 		2762F2181AF08EBA00494F2C = {
 			isa = PBXGroup;
 			children = (
+				2762F22B1AF08EDD00494F2C /* GLUT.framework */,
+				2762F22C1AF08EDD00494F2C /* OpenGL.framework */,
 				2762F2231AF08EBA00494F2C /* CG3 */,
 				2762F2221AF08EBA00494F2C /* Products */,
 			);
@@ -57,6 +66,7 @@
 		2762F2231AF08EBA00494F2C /* CG3 */ = {
 			isa = PBXGroup;
 			children = (
+				27DFA3D81B0071BD0051000A /* glm */,
 				2762F2241AF08EBA00494F2C /* main.cpp */,
 			);
 			path = CG3;
@@ -235,6 +245,7 @@
 				2762F22A1AF08EBA00494F2C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
