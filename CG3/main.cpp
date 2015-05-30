@@ -66,13 +66,13 @@ PointLight light;
 Camera camera;
 Color bgColor;
 
-bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObjectID, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat) {
+bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const ObjectId excludeObjectID, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat) {
     bool found = false;
     float nearestDist = std::numeric_limits<float>::max();
     for (int i = 0; i < spheres.size(); i++) {
         if (excludeObjectID.type == SPHERE && i == excludeObjectID.index)
             continue;
-        Sphere obj = spheres[i];
+        const Sphere &obj = spheres[i];
         Vec3 pos, norm;
         if (glm::intersectRaySphere(rayFrom, normalizedRayDir, obj.center, obj.radius, pos, norm)) {
             float distance = glm::distance(rayFrom, pos);
@@ -90,23 +90,30 @@ bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObje
     for (int i = 0; i < triangles.size(); i++) {
         if (excludeObjectID.type == TRIANGLE && i == excludeObjectID.index)
             continue;
-        Triangle obj = triangles[i];
+        const Triangle &obj = triangles[i];
         Vec3 baryPos;
         if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
-            Vec3 pos = rayFrom + normalizedRayDir * baryPos.z; // See https://github.com/g-truc/glm/issues/6
-            float distance = glm::distance(rayFrom, pos);
+            // See https://github.com/g-truc/glm/issues/6
+            float distance = baryPos.z;
             if (distance < nearestDist) {
                 found = true;
                 nearestDist = distance;
                 nearestObjectID.type = TRIANGLE;
                 nearestObjectID.index = i;
-                nearestPos = pos;
+                nearestPos = rayFrom + normalizedRayDir * baryPos.z;
                 nearestNorm = obj.norm;
                 *nearestMat = obj.material;
             }
         }
     }
     return found;
+}
+
+bool isShaded(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId &excludeObjectID) {
+    ObjectId a;
+    Vec3 b, c;
+    Material *m;
+    return findNearestObject(rayFrom, normalizedRayDir, excludeObjectID, a, b, c, &m);
 }
 
 Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, int depth) {
@@ -117,19 +124,20 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
         return bgColor;
     }
     
+    Color c = bgColor * m->ambientFactor;
+    
     Vec3 lightDir = glm::normalize(light.position - pos);
-    Color diffuse(fabs(glm::dot(norm, lightDir)) * light.intensity);
+    if (!isShaded(pos, lightDir, objectID)) {
+        Color diffuse(fabs(glm::dot(norm, lightDir)) * light.intensity);
+        c += diffuse * m->diffuseFactor;
+    }
     
     Vec3 reflectionDir = glm::normalize(glm::reflect(pos - rayFrom, norm));
     float s = glm::dot(lightDir, reflectionDir);
-    Color specular;
-    if (s > 0.0f) {
-        specular = Color(powf(s, m->shininess) * light.intensity);
+    if (s > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
+        Color specular = Color(powf(s, m->shininess) * light.intensity);
+        c += specular * m->specularFactor;
     }
-    
-    Color c = bgColor * m->ambientFactor
-        + diffuse * m->diffuseFactor
-        + specular * m->specularFactor;
 
     if (depth < DEPTH_LIMIT) {
         c += _renderPixel(pos, reflectionDir, objectID, depth + 1) * m->reflectionFactor;
@@ -223,7 +231,7 @@ int main(int argc, char *argv[]) {
     camera.zFar = 1000;
     camera.fovy = 90;
     bgColor = {0.0, 0.0, 0.0};
-    light.position = {0.0, 2.0, 5.0};
+    light.position = {1.0, 2.0, 5.0};
     light.intensity = 2.0;
 
     glutInit(&argc, argv);
