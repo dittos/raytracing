@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <future>
 #include "glm/vec3.hpp"
 #include "glm/mat4x4.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -65,7 +66,7 @@ PointLight light;
 Camera camera;
 Color bgColor;
 
-bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObjectID, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm) {
+bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObjectID, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat) {
     bool found = false;
     float nearestDist = std::numeric_limits<float>::max();
     for (int i = 0; i < spheres.size(); i++) {
@@ -82,6 +83,7 @@ bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObje
                 nearestObjectID.index = i;
                 nearestPos = pos;
                 nearestNorm = norm;
+                *nearestMat = obj.material;
             }
         }
     }
@@ -89,8 +91,9 @@ bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObje
         if (excludeObjectID.type == TRIANGLE && i == excludeObjectID.index)
             continue;
         Triangle obj = triangles[i];
-        Vec3 pos;
-        if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], pos)) {
+        Vec3 baryPos;
+        if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
+            Vec3 pos = rayFrom + normalizedRayDir * baryPos.z; // See https://github.com/g-truc/glm/issues/6
             float distance = glm::distance(rayFrom, pos);
             if (distance < nearestDist) {
                 found = true;
@@ -99,6 +102,7 @@ bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObje
                 nearestObjectID.index = i;
                 nearestPos = pos;
                 nearestNorm = obj.norm;
+                *nearestMat = obj.material;
             }
         }
     }
@@ -108,15 +112,9 @@ bool findNearestObject(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId excludeObje
 Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, int depth) {
     ObjectId objectID;
     Vec3 pos, norm;
-    if (!findNearestObject(rayFrom, normalizedRayDir, prevObjectID, objectID, pos, norm)) {
-        return bgColor;
-    }
-    
     Material *m;
-    if (objectID.type == SPHERE) {
-        m = spheres[objectID.index].material;
-    } else if (objectID.type == TRIANGLE) {
-        m = triangles[objectID.index].material;
+    if (!findNearestObject(rayFrom, normalizedRayDir, prevObjectID, objectID, pos, norm, &m)) {
+        return bgColor;
     }
     
     Vec3 lightDir = glm::normalize(light.position - pos);
@@ -134,8 +132,7 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
         + specular * m->specularFactor;
 
     if (depth < DEPTH_LIMIT) {
-        Color r = _renderPixel(pos, reflectionDir, objectID, depth + 1) * m->reflectionFactor;
-        c += r;
+        c += _renderPixel(pos, reflectionDir, objectID, depth + 1) * m->reflectionFactor;
     }
     return c;
 }
@@ -144,16 +141,27 @@ Color renderPixel(const Vec3 &p) {
     return _renderPixel(camera.position, glm::normalize(p - camera.position), {}, 0);
 }
 
-void render(Color *pixels, int width, int height) {
-    Mat4 proj = glm::infinitePerspective(camera.fovy, camera.aspect, camera.zNear);
+void _render(Color *pixels, int width, int starty, int endy, Mat4 proj, glm::vec4 viewport) {
     Mat4 model;
-    glm::vec4 viewport(0, 0, width, height);
-    for (int y = 0; y < height; y++) {
+    for (int y = starty; y < endy; y++) {
         for (int x = 0; x < width; x++) {
             Vec3 win = {x, y, 0};
             Vec3 p = glm::unProject(win, model, proj, viewport);
             pixels[y * width + x] = renderPixel(p);
         }
+    }
+}
+
+void render(Color *pixels, int width, int height) {
+    Mat4 proj = glm::perspective(camera.fovy * 3.14159265358979323846f / 180.0f, camera.aspect, camera.zNear, camera.zFar);
+    glm::vec4 viewport(0, 0, width, height);
+    const int ntasks = 4;
+    std::vector<std::future<void>> tasks;
+    for (int y = 0; y < height; y += height / ntasks) {
+        tasks.push_back(std::async(std::launch::async, _render, pixels, width, y, y + height / ntasks, proj, viewport));
+    }
+    for (int i = 0; i < tasks.size(); i++) {
+        tasks[i].get();
     }
 }
 
@@ -185,7 +193,7 @@ void display(void) {
 }
 
 Triangle make_triangle(Vec3 v0, Vec3 v1, Vec3 v2, Material *material) {
-    Triangle t {{v0, v1, v2}, glm::cross(v1 - v0, v2 - v0), material};
+    Triangle t {{v0, v1, v2}, glm::normalize(glm::cross(v1 - v0, v2 - v0)), material};
     return t;
 }
 
@@ -194,30 +202,33 @@ int main(int argc, char *argv[]) {
         {0.780392, 0.568627, 0.113725},
         {0.992157, 0.941176, 0.807843},
         27.8974,
-        0.3};
+        0.2};
     Material chrome = {{0.25, 0.25, 0.25},
         {0.4, 0.4, 0.4},
         {0.774597, 0.774597, 0.774597},
         76.8,
-        0.5};
-    spheres.push_back({{0.0, 0.0, 0.0}, 0.1, &copper});
-    spheres.push_back({{0.2, 0.0, 0.0}, 0.05, &chrome});
-    spheres.push_back({{0.15, 0.1, -0.5}, 0.05, &chrome});
-    triangles.push_back(make_triangle({-0.2, -0.2, -0.2}, {-0.2, 0.0, 0.2}, {-0.4, 0.1, 0.0}, &copper));
+        0.2};
+    spheres.push_back({{-0.1, 0.1, 0.0}, 0.1, &copper});
+    spheres.push_back({{0.15, 0.05, 0.0}, 0.05, &chrome});
+//    spheres.push_back({{0.15, 0.1, -0.5}, 0.05, &chrome});
+    
+    float w = 0.5, front = 1, back = -1;
+    triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
+    triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
 
-    camera.position = {0.0, 0.0, 2.0};
-    camera.at = {0.0, 0.0, 0.0};
+    camera.position = {0.0, 1.5, 7.0};
+    camera.at = {0.0, 0.5, 0.0};
     camera.up = {0.0, 1.0, 0.0};
-    camera.zNear = 1.0;
-    camera.zFar = 1000.0;
-    camera.fovy = 70;
-    bgColor = {0.92, 0.92, 0.92};
-    light.position = {-1.0, 5.0, 0.0};
-    light.intensity = 1.0;
+    camera.zNear = 0.4;
+    camera.zFar = 1000;
+    camera.fovy = 90;
+    bgColor = {0.0, 0.0, 0.0};
+    light.position = {0.0, 2.0, 5.0};
+    light.intensity = 2.0;
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(windowWidth = 640, windowHeight = 480);
+    glutInitWindowSize(windowWidth = 1280, windowHeight = 720);
     glutCreateWindow("2009210107_Term");
     glutReshapeFunc(reshape);
     glutDisplayFunc(display);
