@@ -66,7 +66,7 @@ struct Light {
     Color color;
 };
 
-const int DEPTH_LIMIT = 2;
+const int DEPTH_LIMIT = 4;
 int windowWidth;
 int windowHeight;
 Color *pixels = nullptr;
@@ -76,13 +76,15 @@ std::vector<Light> lights;
 Camera camera;
 Color bgColor;
 
-bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const ObjectId excludeObjectID, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat) {
+bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat) {
     bool found = false;
     float nearestDist = std::numeric_limits<float>::max();
     for (int i = 0; i < spheres.size(); i++) {
         if (excludeObjectID.type == SPHERE && i == excludeObjectID.index)
             continue;
         const Sphere &obj = spheres[i];
+        if (excludeTransparentMat && obj.material->refract)
+            continue;
         Vec3 pos, norm;
         if (glm::intersectRaySphere(rayFrom, normalizedRayDir, obj.center, obj.radius, pos, norm)) {
             float distance = glm::distance(rayFrom, pos);
@@ -101,6 +103,8 @@ bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const Ob
         if (excludeObjectID.type == TRIANGLE && i == excludeObjectID.index)
             continue;
         const Triangle &obj = triangles[i];
+        if (excludeTransparentMat && obj.material->refract)
+            continue;
         Vec3 baryPos;
         if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
             // See https://github.com/g-truc/glm/issues/6
@@ -123,47 +127,53 @@ bool isShaded(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId 
     ObjectId a;
     Vec3 b, c;
     Material *m;
-    return findNearestObject(rayFrom, normalizedRayDir, excludeObjectID, a, b, c, &m);
+    return findNearestObject(rayFrom, normalizedRayDir, excludeObjectID, true, a, b, c, &m);
 }
 
 Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, int depth) {
     ObjectId objectID;
     Vec3 pos, norm;
     Material *m;
-    if (!findNearestObject(rayFrom, normalizedRayDir, prevObjectID, objectID, pos, norm, &m)) {
+    if (!findNearestObject(rayFrom, normalizedRayDir, prevObjectID, false, objectID, pos, norm, &m)) {
         return bgColor;
     }
     
     Color c = bgColor * m->ambientFactor;
     Vec3 reflectionDir = glm::normalize(glm::reflect(normalizedRayDir, norm));
-    for (const Light &light : lights) {
-        Vec3 lightDir;
-        if (light.type == POINT) {
-            lightDir = glm::normalize(light.position - pos);
-        } else if (light.type == DIRECTIONAL) {
-            lightDir = -light.position;
-        }
+    if (!m->refract) {
+        for (const Light &light : lights) {
+            Vec3 lightDir;
+            if (light.type == POINT) {
+                lightDir = glm::normalize(light.position - pos);
+            } else if (light.type == DIRECTIONAL) {
+                lightDir = -light.position;
+            }
 
-        float s = glm::dot(norm, lightDir);
-        if (s > 0.0f && !isShaded(pos, lightDir, objectID)) {
-            Color diffuse(s * light.intensity);
-            c += diffuse * light.color * m->diffuseFactor;
-        }
-        
-        float t = glm::dot(lightDir, reflectionDir);
-        if (t > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
-            Color specular = Color(powf(t, m->shininess) * light.intensity);
-            c += specular * light.color * m->specularFactor;
+            float s = glm::dot(norm, lightDir);
+            if (s > 0.0f && !isShaded(pos, lightDir, objectID)) {
+                Color diffuse(s * light.intensity);
+                c += diffuse * light.color * m->diffuseFactor;
+            }
+            
+            float t = glm::dot(lightDir, reflectionDir);
+            if (t > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
+                Color specular = Color(powf(t, m->shininess) * light.intensity);
+                c += specular * light.color * m->specularFactor;
+            }
         }
     }
 
     if (depth < DEPTH_LIMIT) {
         c += _renderPixel(pos, reflectionDir, objectID, depth + 1) * m->reflectionFactor;
-//        if (m->refract) {
-//            Vec3 refractionDir = glm::normalize(glm::refract(pos - rayFrom, norm, m->refraction));
-//            // For refraction we don't exclude current object
-//            c += _renderPixel(pos + refractionDir * 1e-3f, refractionDir, {}, depth + 1) * m->refractionFactor;
-//        }
+        if (m->refract) {
+            float eta = m->refraction;
+            if (glm::dot(normalizedRayDir, norm) < 0)
+                eta = 1.0f / eta;
+            Vec3 N = glm::faceforward(norm, normalizedRayDir, norm);
+            Vec3 refractionDir = glm::refract(normalizedRayDir, N, eta);
+            // For refraction we don't exclude current object
+            c += _renderPixel(pos + refractionDir * 1e-5f, refractionDir, {}, depth + 1) * m->refractionFactor;
+        }
     }
     return c;
 }
@@ -239,18 +249,19 @@ int main(int argc, char *argv[]) {
         {0.4, 0.4, 0.4},
         {0.774597, 0.774597, 0.774597},
         76.8,
-        0.2};
+        0.3};
     Material glass = {{0.25, 0.25, 0.25},
         {0.4, 0.4, 0.4},
         {0.774597, 0.774597, 0.774597},
         76.8,
         0.2};
     glass.refract = true;
-    glass.refraction = 1.52f;
-    glass.refractionFactor = 0.3f;
-    spheres.push_back({{0.0, 0.1, 0.0}, 0.1, &chrome});
-    spheres.push_back({{-0.1, 0.1, -0.2}, 0.1, &copper});
-    spheres.push_back({{0.2, 0.2, 0.0}, 0.05, &chrome});
+    glass.refraction = 1.53f;
+    glass.refractionFactor = 0.7f;
+    spheres.push_back({{0.0, 0.2, 0.4}, 0.01, &glass});
+    spheres.push_back({{0.0, 0.1, 0.0}, 0.1, &copper});
+    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
+    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
     
     float w = 0.5, front = 0.3, back = -0.3;
     triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
@@ -259,7 +270,7 @@ int main(int argc, char *argv[]) {
     camera.position = {0.0, 0.2, 0.5};
     camera.at = {0.0, 0.1, 0.0};
     camera.up = {0.0, 1.0, 0.0};
-    camera.zNear = 0.1;
+    camera.zNear = 0.01;
     camera.zFar = 10.0;
     camera.fovy = 60;
     bgColor = {0.0, 0.0, 0.0};
