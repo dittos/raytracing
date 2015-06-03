@@ -28,6 +28,9 @@ struct Material {
     Vec3 ambientFactor, diffuseFactor, specularFactor;
     float shininess;
     float reflectionFactor;
+    bool refract;
+    float refraction;
+    float refractionFactor;
 };
 
 struct Sphere {
@@ -132,7 +135,7 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
     }
     
     Color c = bgColor * m->ambientFactor;
-    Vec3 reflectionDir = glm::normalize(glm::reflect(pos - rayFrom, norm));
+    Vec3 reflectionDir = glm::normalize(glm::reflect(normalizedRayDir, norm));
     for (const Light &light : lights) {
         Vec3 lightDir;
         if (light.type == POINT) {
@@ -140,21 +143,27 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
         } else if (light.type == DIRECTIONAL) {
             lightDir = -light.position;
         }
-        
-        if (!isShaded(pos, lightDir, objectID)) {
-            Color diffuse(fabs(glm::dot(norm, lightDir)) * light.intensity);
+
+        float s = glm::dot(norm, lightDir);
+        if (s > 0.0f && !isShaded(pos, lightDir, objectID)) {
+            Color diffuse(s * light.intensity);
             c += diffuse * light.color * m->diffuseFactor;
         }
         
-        float s = glm::dot(lightDir, reflectionDir);
-        if (s > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
-            Color specular = Color(powf(s, m->shininess) * light.intensity);
+        float t = glm::dot(lightDir, reflectionDir);
+        if (t > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
+            Color specular = Color(powf(t, m->shininess) * light.intensity);
             c += specular * light.color * m->specularFactor;
         }
     }
 
     if (depth < DEPTH_LIMIT) {
         c += _renderPixel(pos, reflectionDir, objectID, depth + 1) * m->reflectionFactor;
+//        if (m->refract) {
+//            Vec3 refractionDir = glm::normalize(glm::refract(pos - rayFrom, norm, m->refraction));
+//            // For refraction we don't exclude current object
+//            c += _renderPixel(pos + refractionDir * 1e-3f, refractionDir, {}, depth + 1) * m->refractionFactor;
+//        }
     }
     return c;
 }
@@ -175,7 +184,8 @@ void _render(Color *pixels, int width, int starty, int endy, Mat4 proj, glm::vec
 }
 
 void render(Color *pixels, int width, int height) {
-    Mat4 proj = glm::perspective(camera.fovy * 3.14159265358979323846f / 180.0f, camera.aspect, camera.zNear, camera.zFar);
+    Mat4 proj = glm::perspective(camera.fovy * 3.14159265358979323846f / 180.0f, camera.aspect, camera.zNear, camera.zFar) *
+        glm::lookAt(camera.position, camera.at, camera.up);
     glm::vec4 viewport(0, 0, width, height);
     const int ntasks = 4;
     std::vector<std::future<void>> tasks;
@@ -230,24 +240,34 @@ int main(int argc, char *argv[]) {
         {0.774597, 0.774597, 0.774597},
         76.8,
         0.2};
-    spheres.push_back({{-0.1, 0.1, 0.0}, 0.1, &copper});
-    spheres.push_back({{0.15, 0.05, 0.0}, 0.05, &chrome});
-    spheres.push_back({{0.15, 0.1, -0.5}, 0.05, &chrome});
+    Material glass = {{0.25, 0.25, 0.25},
+        {0.4, 0.4, 0.4},
+        {0.774597, 0.774597, 0.774597},
+        76.8,
+        0.2};
+    glass.refract = true;
+    glass.refraction = 1.52f;
+    glass.refractionFactor = 0.3f;
+    spheres.push_back({{0.0, 0.1, 0.0}, 0.1, &chrome});
+    spheres.push_back({{-0.1, 0.1, -0.2}, 0.1, &copper});
+    spheres.push_back({{0.2, 0.2, 0.0}, 0.05, &chrome});
     
-    float w = 0.5, front = 1, back = -1;
+    float w = 0.5, front = 0.3, back = -0.3;
     triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
     triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
 
-    camera.position = {0.0, 1.5, 7.0};
-    camera.at = {0.0, 0.5, 0.0};
+    camera.position = {0.0, 0.2, 0.5};
+    camera.at = {0.0, 0.1, 0.0};
     camera.up = {0.0, 1.0, 0.0};
-    camera.zNear = 0.4;
-    camera.zFar = 1000;
-    camera.fovy = 90;
+    camera.zNear = 0.1;
+    camera.zFar = 10.0;
+    camera.fovy = 60;
     bgColor = {0.0, 0.0, 0.0};
-    lights.push_back({POINT, {0.0, 10.0, 0.0}, 2.0, {1.0, 1.0, 1.0}});
+    lights.push_back({POINT, {0.0, 5.0, 0.0}, 1.0, {1.0, 1.0, 1.0}});
     lights.push_back({POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
-    lights.push_back({DIRECTIONAL, {0.0, 0.0, 1.0}, 2.0, {0.0, 0.0, 1.0}});
+    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
+    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
+    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
