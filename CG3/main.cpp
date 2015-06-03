@@ -51,18 +51,25 @@ struct Camera {
     float aspect;
 };
 
-struct PointLight {
-    Vec3 position;
-    float intensity;
+enum LightType {
+    POINT,
+    DIRECTIONAL
 };
 
-const int DEPTH_LIMIT = 3;
+struct Light {
+    LightType type;
+    Vec3 position;
+    float intensity;
+    Color color;
+};
+
+const int DEPTH_LIMIT = 2;
 int windowWidth;
 int windowHeight;
 Color *pixels = nullptr;
 std::vector<Sphere> spheres;
 std::vector<Triangle> triangles;
-PointLight light;
+std::vector<Light> lights;
 Camera camera;
 Color bgColor;
 
@@ -125,18 +132,25 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
     }
     
     Color c = bgColor * m->ambientFactor;
-    
-    Vec3 lightDir = glm::normalize(light.position - pos);
-    if (!isShaded(pos, lightDir, objectID)) {
-        Color diffuse(fabs(glm::dot(norm, lightDir)) * light.intensity);
-        c += diffuse * m->diffuseFactor;
-    }
-    
     Vec3 reflectionDir = glm::normalize(glm::reflect(pos - rayFrom, norm));
-    float s = glm::dot(lightDir, reflectionDir);
-    if (s > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
-        Color specular = Color(powf(s, m->shininess) * light.intensity);
-        c += specular * m->specularFactor;
+    for (const Light &light : lights) {
+        Vec3 lightDir;
+        if (light.type == POINT) {
+            lightDir = glm::normalize(light.position - pos);
+        } else if (light.type == DIRECTIONAL) {
+            lightDir = -light.position;
+        }
+        
+        if (!isShaded(pos, lightDir, objectID)) {
+            Color diffuse(fabs(glm::dot(norm, lightDir)) * light.intensity);
+            c += diffuse * light.color * m->diffuseFactor;
+        }
+        
+        float s = glm::dot(lightDir, reflectionDir);
+        if (s > 0.0f && !isShaded(pos, reflectionDir, objectID)) {
+            Color specular = Color(powf(s, m->shininess) * light.intensity);
+            c += specular * light.color * m->specularFactor;
+        }
     }
 
     if (depth < DEPTH_LIMIT) {
@@ -218,7 +232,7 @@ int main(int argc, char *argv[]) {
         0.2};
     spheres.push_back({{-0.1, 0.1, 0.0}, 0.1, &copper});
     spheres.push_back({{0.15, 0.05, 0.0}, 0.05, &chrome});
-//    spheres.push_back({{0.15, 0.1, -0.5}, 0.05, &chrome});
+    spheres.push_back({{0.15, 0.1, -0.5}, 0.05, &chrome});
     
     float w = 0.5, front = 1, back = -1;
     triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
@@ -231,8 +245,9 @@ int main(int argc, char *argv[]) {
     camera.zFar = 1000;
     camera.fovy = 90;
     bgColor = {0.0, 0.0, 0.0};
-    light.position = {1.0, 2.0, 5.0};
-    light.intensity = 2.0;
+    lights.push_back({POINT, {0.0, 10.0, 0.0}, 2.0, {1.0, 1.0, 1.0}});
+    lights.push_back({POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
+    lights.push_back({DIRECTIONAL, {0.0, 0.0, 1.0}, 2.0, {0.0, 0.0, 1.0}});
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
