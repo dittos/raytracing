@@ -1,13 +1,20 @@
 #include <OpenGL/GL.h>
 #include <GLUT/GLUT.h>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <vector>
 #include <cmath>
 #include <future>
 #include "glm/vec3.hpp"
 #include "glm/mat4x4.hpp"
+#include "glm/vector_relational.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/intersect.hpp"
+
+#define ENABLE_OCTREE
+
+const int OCTREE_DEPTH = 5;
 
 typedef glm::vec3 Color;
 typedef glm::vec3 Vec3;
@@ -66,15 +73,184 @@ struct Light {
     Color color;
 };
 
-const int DEPTH_LIMIT = 4;
+struct BoundingBox {
+    Vec3 min, max;
+};
+
+struct OctreeNode {
+    BoundingBox bounds;
+    std::vector<int> objects;
+    OctreeNode *subnodes[8];
+};
+
+const int DEPTH_LIMIT = 2;
 int windowWidth;
 int windowHeight;
 Color *pixels = nullptr;
 std::vector<Sphere> spheres;
 std::vector<Triangle> triangles;
 std::vector<Light> lights;
+OctreeNode octreeRoot;
 Camera camera;
 Color bgColor;
+
+BoundingBox get_bbox(const Triangle &obj) {
+    float epsilon = 0.01f;
+    BoundingBox b = {
+        {
+            std::min({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}) - epsilon,
+            std::min({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}) - epsilon,
+            std::min({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z}) - epsilon
+        },
+        {
+            std::max({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}) + epsilon,
+            std::max({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}) + epsilon,
+            std::max({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z}) + epsilon
+        }
+    };
+    return b;
+}
+
+bool overlaps(const BoundingBox &bbox, const Triangle &obj) {
+    BoundingBox b = get_bbox(obj);
+    return !((b.max.x < bbox.min.x)
+      || (b.max.y < bbox.min.y)
+      || (b.max.z < bbox.min.z)
+      || (b.min.x > bbox.max.x)
+      || (b.min.y > bbox.max.y)
+      || (b.min.z > bbox.max.z));
+}
+
+void _buildOctree(OctreeNode *node, int depth) {
+    if (depth > OCTREE_DEPTH) return;
+    BoundingBox b = node->bounds;
+    Vec3 center = (b.min + b.max) / 2.0f;
+    BoundingBox bboxes[8] = {
+        {b.min, center},
+        {{center.x, b.min.y, b.min.z}, {b.max.x, center.y, center.z}},
+        {{center.x, b.min.y, center.z}, {b.max.x, center.y, b.max.z}},
+        {{b.min.x, b.min.y, center.z}, {center.x, center.y, b.max.z}},
+        {{b.min.x, center.y, b.min.z}, {center.x, b.max.y, center.z}},
+        {{center.x, center.y, b.min.z}, {b.max.x, b.max.y, center.z}},
+        {center, b.max},
+        {{b.min.x, center.y, center.z}, {center.x, b.max.y, b.max.z}}
+    };
+    for (int j = 0; j < 8; j++) {
+        OctreeNode *n = new OctreeNode;
+        n->bounds = bboxes[j];
+        std::fill_n(n->subnodes, 8, nullptr);
+        for (int i : node->objects) {
+            if (overlaps(bboxes[j], triangles[i])) {
+                n->objects.push_back(i);
+            }
+        }
+        if (n->objects.size() > 2) {
+            _buildOctree(n, depth + 1); // sub-partition
+        }
+        node->subnodes[j] = n;
+    }
+}
+
+void buildOctree() {
+    float epsilon = 0.01f;
+    float size = 5;
+    octreeRoot.bounds.min = {-size + epsilon, -size + epsilon, -size + epsilon};
+    octreeRoot.bounds.max = {size + epsilon, size + epsilon, size + epsilon};
+    for (int i = 0; i < triangles.size(); i++)
+        octreeRoot.objects.push_back(i);
+    _buildOctree(&octreeRoot, 0);
+}
+
+bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, const Vec3 &planeOrigin, Vec3 &p) {
+    float dist;
+    if (glm::intersectRayPlane(rayFrom, normalizedRayDir, planeOrigin, planeNormal, dist)) {
+        p = rayFrom + normalizedRayDir * dist;
+        return true;
+    }
+    return false;
+}
+
+bool intersectBboxRay(const BoundingBox &bbox, const Vec3 &rayFrom, const Vec3 &normalizedRayDir) {
+    if (glm::all(glm::lessThan(bbox.min, rayFrom)) && glm::all(glm::lessThan(rayFrom, bbox.max)))
+        // bbox contains rayFrom
+        return true;
+    
+    Vec3 c = bbox.min;
+    Vec3 p;
+    
+    c.z = bbox.min.z;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.min, p)
+       && (p.x > bbox.min.x) && (p.x < bbox.max.x)
+       && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
+        return true;
+    }
+    
+    c.z = bbox.max.z;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.max, p)
+       && (p.x > bbox.min.x) && (p.x < bbox.max.x)
+       && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
+        return true;
+    }
+    
+    c.y = bbox.min.y;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.min, p)
+       && (p.x > bbox.min.x) && (p.x < bbox.max.x)
+       && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
+        return true;
+    }
+    
+    c.y = bbox.max.y;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.max, p)
+       && (p.x > bbox.min.x) && (p.x < bbox.max.x)
+       && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
+        return true;
+    }
+    
+    c.x = bbox.min.x;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.min, p)
+       && (p.y > bbox.min.y) && (p.y < bbox.max.y)
+       && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
+        return true;
+    }
+    
+    c.x = bbox.max.x;
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.max, p)
+       && (p.y > bbox.min.y) && (p.y < bbox.max.y)
+       && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool findNode(OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, int depth, const int excludeId, int &nearestId, float &nearestDist) {
+    bool found = false;
+    if (depth == OCTREE_DEPTH) { // leaf
+        Vec3 baryPos;
+        for (int i : node->objects) {
+            if (i == excludeId) continue;
+            const Triangle &obj = triangles[i];
+            if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
+                if (baryPos.z < nearestDist) {
+                    nearestDist = baryPos.z;
+                    nearestId = i;
+                    found = true;
+                }
+            }
+        }
+    } else {
+        for (OctreeNode *subnode : node->subnodes) {
+            if (subnode == nullptr)
+                continue;
+            
+            if (intersectBboxRay(subnode->bounds, rayFrom, normalizedRayDir)) {
+                if (findNode(subnode, rayFrom, normalizedRayDir, depth + 1, excludeId, nearestId, nearestDist))
+                    found = true;
+            }
+        }
+    }
+    return found;
+}
 
 bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
     bool found = false;
@@ -100,6 +276,16 @@ bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const Ob
             }
         }
     }
+#ifdef ENABLE_OCTREE
+    if (findNode(&octreeRoot, rayFrom, normalizedRayDir, 0, excludeObjectID.type == TRIANGLE ? excludeObjectID.index : -1, nearestObjectID.index, nearestDist)) {
+        found = true;
+        nearestObjectID.type = TRIANGLE;
+        nearestPos = rayFrom + normalizedRayDir * nearestDist;
+        nearestNorm = triangles[nearestObjectID.index].norm;
+        *nearestMat = triangles[nearestObjectID.index].material;
+        isInside = false;
+    }
+#else
     for (int i = 0; i < triangles.size(); i++) {
         if (excludeObjectID.type == TRIANGLE && i == excludeObjectID.index)
             continue;
@@ -122,6 +308,7 @@ bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const Ob
             }
         }
     }
+#endif
     return found;
 }
 
@@ -190,9 +377,9 @@ Color renderPixel(const Vec3 &p) {
     return _renderPixel(camera.position, glm::normalize(p - camera.position), {}, 0, 1.0f);
 }
 
-void _render(Color *pixels, int width, int starty, int endy, Mat4 proj, glm::vec4 viewport) {
+void _render(Color *pixels, int width, int height, int ntasks, int taskid, Mat4 proj, glm::vec4 viewport) {
     Mat4 model;
-    for (int y = starty; y < endy; y++) {
+    for (int y = taskid; y < height; y += ntasks) {
         for (int x = 0; x < width; x++) {
             Vec3 win = {x, y, 0};
             Vec3 p = glm::unProject(win, model, proj, viewport);
@@ -202,17 +389,20 @@ void _render(Color *pixels, int width, int starty, int endy, Mat4 proj, glm::vec
 }
 
 void render(Color *pixels, int width, int height) {
+    time_t start = time(NULL);
     Mat4 proj = glm::perspective(camera.fovy * 3.14159265358979323846f / 180.0f, camera.aspect, camera.zNear, camera.zFar) *
         glm::lookAt(camera.position, camera.at, camera.up);
     glm::vec4 viewport(0, 0, width, height);
     const int ntasks = 4;
     std::vector<std::future<void>> tasks;
-    for (int y = 0; y < height; y += height / ntasks) {
-        tasks.push_back(std::async(std::launch::async, _render, pixels, width, y, y + height / ntasks, proj, viewport));
+    for (int i = 0; i < ntasks; i++) {
+        tasks.push_back(std::async(std::launch::async, _render, pixels, width, height, ntasks, i, proj, viewport));
     }
     for (int i = 0; i < tasks.size(); i++) {
         tasks[i].get();
     }
+    time_t end = time(NULL);
+    std::cout << "time: " << end - start << std::endl;
 }
 
 void reshape(int width, int height) {
@@ -247,6 +437,39 @@ Triangle make_triangle(Vec3 v0, Vec3 v1, Vec3 v2, Material *material) {
     return t;
 }
 
+void readModel(std::string path, float scaleFactor, Material *material) {
+    std::ifstream f(path);
+    std::string line;
+    std::vector<Vec3> vs;
+    
+    while (std::getline(f, line)) {
+        std::stringstream ss(line);
+        std::string type;
+        ss >> type;
+        if (type == "v") {
+            Vec3 v;
+            ss >> v.x >> v.y >> v.z;
+            vs.push_back(v * scaleFactor);
+        } else if (type == "f") {
+            std::string v_str;
+            std::vector<int> f;
+            while (ss >> v_str) {
+                int v = atoi(v_str.c_str());
+                if (v < 0)
+                    v += vs.size();
+                else
+                    v--;
+                f.push_back(v);
+            }
+            for (int i = 0; i < f.size() - 2; i++) {
+                triangles.push_back(make_triangle(vs[f[i]], vs[f[i + 1]], vs[f[i + 2]], material));
+            }
+        }
+    }
+    
+    std::cout << "vertex: " << vs.size() << std::endl;
+}
+
 int main(int argc, char *argv[]) {
     Material copper = {{0.329412, 0.223529, 0.027451},
         {0.780392, 0.568627, 0.113725},
@@ -266,20 +489,25 @@ int main(int argc, char *argv[]) {
     glass.refract = true;
     glass.refraction = 1.53f;
     glass.refractionFactor = 1.0f;
-    spheres.push_back({{-0.35, 0.15, 0.0}, 0.1, &glass});
+//    spheres.push_back({{-0.35, 0.15, 0.0}, 0.1, &glass});
     spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
-//    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
-//    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
+    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
+    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
     
-    float w = 0.5, front = 0.3, back = -0.3, h = 0.5;
+    float w = 0.5, front = 0.3, back = -0.3, h = 1.0;
     triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
     triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
     triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
     triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
     triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
     triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
+    readModel("/Users/ditto/Downloads/2009210107_3/2009210107_3.obj", 0.5, &copper);
+#ifdef ENABLE_OCTREE
+    buildOctree();
+    std::cout << "built octree" << std::endl;
+#endif
 
-    camera.position = {0.0, 0.2, 0.5};
+    camera.position = {0.0, 0.2, 0.7};
     camera.at = {0.0, 0.1, 0.0};
     camera.up = {0.0, 1.0, 0.0};
     camera.zNear = 0.01;
@@ -295,7 +523,7 @@ int main(int argc, char *argv[]) {
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(windowWidth = 1280, windowHeight = 720);
+    glutInitWindowSize(windowWidth = 640, windowHeight = 360);
     glutCreateWindow("2009210107_Term");
     glutReshapeFunc(reshape);
     glutDisplayFunc(display);
