@@ -1,5 +1,10 @@
+#ifdef WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#include <glut.h>
+#else
 #include <OpenGL/GL.h>
 #include <GLUT/GLUT.h>
+#endif
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -64,8 +69,8 @@ struct Camera {
 };
 
 enum LightType {
-    POINT,
-    DIRECTIONAL
+    LT_POINT,
+	LT_DIRECTIONAL
 };
 
 struct Light {
@@ -259,7 +264,7 @@ bool findNode(OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDi
     return found;
 }
 
-bool findNearestObject(const Vec3 rayFrom, const Vec3 normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
+bool findNearestObject(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
     bool found = false;
     float nearestDist = std::numeric_limits<float>::max();
     for (int i = 0; i < spheres.size(); i++) {
@@ -327,7 +332,7 @@ bool isShaded(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId 
     return findNearestObject(rayFrom, normalizedRayDir, excludeObjectID, true, a, b, c, &m, isInside);
 }
 
-Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, int depth, float rIndex) {
+Color _renderPixel(Vec3 &rayFrom, Vec3 &normalizedRayDir, ObjectId prevObjectID, int depth, float rIndex) {
     ObjectId objectID;
     Vec3 pos, norm;
     Material *m;
@@ -341,9 +346,10 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
     if (!m->refract) {
         for (const Light &light : lights) {
             Vec3 lightDir;
-            if (light.type == POINT) {
+			if (light.type == LT_POINT) {
                 lightDir = glm::normalize(light.position - pos);
-            } else if (light.type == DIRECTIONAL) {
+			}
+			else if (light.type == LT_DIRECTIONAL) {
                 lightDir = -light.position;
             }
 
@@ -384,7 +390,7 @@ Color renderPixel(const Vec3 &p) {
     return _renderPixel(camera.position, glm::normalize(p - camera.position), {}, 0, 1.0f);
 }
 
-void _render(Color *pixels, int width, int height, int ntasks, int taskid, Mat4 proj, glm::vec4 viewport) {
+void _render(Color *pixels, int width, int height, int ntasks, int taskid, const Mat4 &proj, const glm::vec4 &viewport) {
     Mat4 model;
     for (int y = taskid; y < height; y += ntasks) {
         for (int x = 0; x < width; x++) {
@@ -496,7 +502,7 @@ int main(int argc, char *argv[]) {
     glass.refract = true;
     glass.refraction = 1.53f;
     glass.refractionFactor = 1.0f;
-//    spheres.push_back({{-0.35, 0.15, 0.0}, 0.1, &glass});
+    spheres.push_back({{0, 0.2, 0.55}, 0.02, &glass});
 //    spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
 //    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
 //    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
@@ -508,7 +514,7 @@ int main(int argc, char *argv[]) {
 //    triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
 //    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
 //    triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
-    readModel("/Users/ditto/Downloads/2009210107_3/2009210107_3.obj", 0.5, &copper);
+    readModel("2009210107_3.obj", 0.5, &copper);
 #ifdef ENABLE_OCTREE
     buildOctree();
     std::cout << "built octree" << std::endl;
@@ -521,14 +527,14 @@ int main(int argc, char *argv[]) {
     camera.zFar = 10.0;
     camera.fovy = 60;
     bgColor = {0.0, 0.0, 0.0};
-    lights.push_back({POINT, {0.0, 0.0, 1.0}, 1.0, {1.0, 0.0, 0.0}});
-//    lights.push_back({POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
-//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
-//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
-    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, -1.0f})), 1.0, {1.0, 1.0, 0.0}});
+    lights.push_back({LT_POINT, {0.0, 0.0, 1.0}, 1.0, {1.0, 0.0, 0.0}});
+//    lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
+//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
+//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
+//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
+	lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 1.0, { 1.0, 1.0, 0.0 } });
 
-    const int width = 640, height = 480;
+    const int width = 1280, height = 720;
     camera.aspect = (float)width / height;
     Color *data = new Color[width * height];
     render(data, width, height);
