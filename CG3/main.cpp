@@ -21,8 +21,6 @@
 
 #define ENABLE_OCTREE
 
-const int OCTREE_DEPTH = 5;
-
 typedef glm::vec3 Color;
 typedef glm::vec3 Vec3;
 typedef glm::mat4 Mat4;
@@ -88,9 +86,11 @@ struct OctreeNode {
     BoundingBox bounds;
     std::vector<int> objects;
     OctreeNode *subnodes[8];
+	bool leaf;
 };
 
-const int DEPTH_LIMIT = 2;
+const int OCTREE_DEPTH = 5;
+const int DEPTH_LIMIT = 4;
 int windowWidth;
 int windowHeight;
 Color *pixels = nullptr;
@@ -100,6 +100,14 @@ std::vector<Light> lights;
 OctreeNode octreeRoot;
 Camera camera;
 Color bgColor;
+
+BoundingBox extend(const BoundingBox &bbox, float d) {
+	BoundingBox e = {
+			{ bbox.min.x - d, bbox.min.y - d, bbox.min.z - d },
+			{ bbox.max.x + d, bbox.max.y + d, bbox.max.z + d }
+	};
+	return e;
+}
 
 BoundingBox get_bbox(const Triangle &obj) {
     BoundingBox b = {
@@ -114,7 +122,7 @@ BoundingBox get_bbox(const Triangle &obj) {
             std::max({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z})
         }
     };
-    return b;
+    return extend(b, 1e-2f);
 }
 
 bool overlaps(const BoundingBox &bbox, const BoundingBox &b) {
@@ -126,16 +134,7 @@ bool overlaps(const BoundingBox &bbox, const BoundingBox &b) {
       || (b.min.z > bbox.max.z));
 }
 
-BoundingBox extend(const BoundingBox &bbox, float d) {
-    BoundingBox e = {
-        {bbox.min.x - d, bbox.min.y - d, bbox.min.z - d},
-        {bbox.max.x + d, bbox.max.y + d, bbox.max.z + d}
-    };
-    return e;
-}
-
-void _buildOctree(OctreeNode *node, int depth) {
-    if (depth == OCTREE_DEPTH) return;
+void splitOctreeNode(OctreeNode *node, int depth) {
     BoundingBox b = node->bounds;
     Vec3 center = (b.min + b.max) / 2.0f;
     BoundingBox bboxes[8] = {
@@ -149,77 +148,92 @@ void _buildOctree(OctreeNode *node, int depth) {
         {{b.min.x, center.y, center.z}, {center.x, b.max.y, b.max.z}}
     };
     for (int j = 0; j < 8; j++) {
-        OctreeNode *n = new OctreeNode;
-        n->bounds = extend(bboxes[j], 1e-3f);
-        std::fill_n(n->subnodes, 8, nullptr);
+        OctreeNode *subnode = new OctreeNode;
+		subnode->leaf = true;
+		subnode->bounds = extend(bboxes[j], 1e-2f);
         for (int i : node->objects) {
-            if (overlaps(n->bounds, get_bbox(triangles[i]))) {
-                n->objects.push_back(i);
+			if (overlaps(subnode->bounds, get_bbox(triangles[i]))) {
+				subnode->objects.push_back(i);
             }
         }
-        if (n->objects.size() > 2) {
-            _buildOctree(n, depth + 1); // sub-partition
-        }
-        node->subnodes[j] = n;
+		if (subnode->objects.size() == 0) {
+			delete subnode;
+			subnode = nullptr;
+		}
+		else {
+			node->leaf = false;
+			if (depth < OCTREE_DEPTH)
+				splitOctreeNode(subnode, depth + 1);
+		}
+        node->subnodes[j] = subnode;
     }
 }
 
 void buildOctree() {
-    float size = 5;
+    float size = 10;
     octreeRoot.bounds.min = {-size, -size, -size};
     octreeRoot.bounds.max = {size, size, size};
     for (int i = 0; i < triangles.size(); i++)
         octreeRoot.objects.push_back(i);
-    _buildOctree(&octreeRoot, 0);
+	octreeRoot.leaf = true;
+    splitOctreeNode(&octreeRoot, 0);
 }
 
-bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, const Vec3 &planeOrigin, Vec3 &p) {
-    float dist;
-    if (glm::intersectRayPlane(rayFrom, normalizedRayDir, planeOrigin, planeNormal, dist)) {
-        p = rayFrom + normalizedRayDir * dist;
-        return true;
-    }
-    return false;
+bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, float planeD, Vec3 &p) {
+	float d = glm::dot(normalizedRayDir, planeNormal);
+	if (d != 0) {
+		float t = -(glm::dot(rayFrom, planeNormal) - planeD) / d;
+		if (t < 0) return false;
+		p = rayFrom + normalizedRayDir * t;
+		return true;
+	}
+	else if (glm::dot(rayFrom, planeNormal) == planeD) {
+		p = rayFrom;
+		return true;
+	}
+	return false;
 }
 
 bool intersectBboxRay(const BoundingBox &bbox, const Vec3 &rayFrom, const Vec3 &normalizedRayDir) {
-    if (glm::all(glm::lessThan(bbox.min, rayFrom)) && glm::all(glm::lessThan(rayFrom, bbox.max)))
+    if (bbox.min.x < rayFrom.x && rayFrom.x < bbox.max.x &&
+		bbox.min.y < rayFrom.y && rayFrom.y < bbox.max.y &&
+		bbox.min.z < rayFrom.z && rayFrom.z < bbox.max.z)
         // bbox contains rayFrom
         return true;
     
     Vec3 p;
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.min, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.min.z, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
         return true;
     }
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.max, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.max.z, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
         return true;
     }
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.min, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.min.y, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.max, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.max.y, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.min, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.min.z, p)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.max, p)
+    if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.max.z, p)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
@@ -228,39 +242,32 @@ bool intersectBboxRay(const BoundingBox &bbox, const Vec3 &rayFrom, const Vec3 &
     return false;
 }
 
-bool findNode(OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, int depth, const int excludeId, int &nearestId, float &nearestDist) {
-    bool found = false;
-    if (depth == OCTREE_DEPTH) { // leaf
-        Vec3 baryPos;
-        for (int i : node->objects) {
-            if (i == excludeId) continue;
-            const Triangle &obj = triangles[i];
-            if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
-                if (baryPos.z < nearestDist) {
-                    nearestDist = baryPos.z;
-                    nearestId = i;
-                    found = true;
-                }
-            }
-        }
-    } else {
-        bool allnull = true;
-        for (OctreeNode *subnode : node->subnodes) {
-            if (subnode == nullptr)
-                continue;
-            
-            allnull = false;
-            if (intersectBboxRay(subnode->bounds, rayFrom, normalizedRayDir)) {
-                if (findNode(subnode, rayFrom, normalizedRayDir, depth + 1, excludeId, nearestId, nearestDist))
-                    found = true;
-            }
-        }
-        if (allnull) {
-            // yeah!
-            if (findNode(node, rayFrom, normalizedRayDir, OCTREE_DEPTH, excludeId, nearestId, nearestDist))
-                found = true;
-        }
-    }
+bool findNode(OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const int excludeId, int &nearestId, float &nearestDist) {
+	bool found = false;
+	if (!node->leaf) {
+		for (OctreeNode *subnode : node->subnodes) {
+			// Early pruning!
+			if (subnode == nullptr || !intersectBboxRay(subnode->bounds, rayFrom, normalizedRayDir))
+				continue;
+
+			if (findNode(subnode, rayFrom, normalizedRayDir, excludeId, nearestId, nearestDist))
+				found = true;
+		}
+	}
+	else {
+		Vec3 baryPos;
+		for (int i : node->objects) {
+			if (i == excludeId) continue;
+			const Triangle &obj = triangles[i];
+			if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
+				if (baryPos.z < nearestDist) {
+					found = true;
+					nearestDist = baryPos.z;
+					nearestId = i;
+				}
+			}
+		}
+	}
     return found;
 }
 
@@ -289,7 +296,7 @@ bool findNearestObject(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const 
         }
     }
 #ifdef ENABLE_OCTREE
-    if (findNode(&octreeRoot, rayFrom, normalizedRayDir, 0, excludeObjectID.type == TRIANGLE ? excludeObjectID.index : -1, nearestObjectID.index, nearestDist)) {
+    if (findNode(&octreeRoot, rayFrom, normalizedRayDir, excludeObjectID.type == TRIANGLE ? excludeObjectID.index : -1, nearestObjectID.index, nearestDist)) {
         found = true;
         nearestObjectID.type = TRIANGLE;
         nearestPos = rayFrom + normalizedRayDir * nearestDist;
@@ -500,16 +507,16 @@ int main(int argc, char *argv[]) {
         76.8,
         0.0};
     glass.refract = true;
-    glass.refraction = 1.53f;
+    glass.refraction = 1.3f;
     glass.refractionFactor = 1.0f;
-    spheres.push_back({{0, 0.2, 0.55}, 0.02, &glass});
+    spheres.push_back({{-0.02, 0.2, 0.55}, 0.02, &glass});
 //    spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
-//    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
+    spheres.push_back({{0.25, 0.1, 0.0}, 0.1, &chrome});
 //    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
     
-//    float w = 0.5, front = 0.3, back = -0.3, h = 1.0;
-//    triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
-//    triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
+    float w = 1.0, front = 1.0, back = -1.0, h = 1.0, y = -0.01f;
+    triangles.push_back(make_triangle({-w, y, back}, {-w, y, front}, {w, y, back}, &chrome));
+    triangles.push_back(make_triangle({w, y, back}, {-w, y, front}, {w, y, front}, &chrome));
 //    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
 //    triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
 //    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
@@ -527,12 +534,12 @@ int main(int argc, char *argv[]) {
     camera.zFar = 10.0;
     camera.fovy = 60;
     bgColor = {0.0, 0.0, 0.0};
-    lights.push_back({LT_POINT, {0.0, 0.0, 1.0}, 1.0, {1.0, 0.0, 0.0}});
+//    lights.push_back({LT_POINT, {0.0, 0.0, 1.0}, 1.0, {1.0, 0.0, 0.0}});
 //    lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
-//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
-//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-//    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
-	lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 1.0, { 1.0, 1.0, 0.0 } });
+    lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
+    //lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
+    //lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
+	lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
 
     const int width = 1280, height = 720;
     camera.aspect = (float)width / height;
@@ -550,12 +557,16 @@ int main(int argc, char *argv[]) {
     }
     stbi_write_png("out.png", width, height, 3, bytedata, 0);
 
-//    glutInit(&argc, argv);
-//    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-//    glutInitWindowSize(windowWidth = 640, windowHeight = 360);
-//    glutCreateWindow("2009210107_Term");
-//    glutReshapeFunc(reshape);
-//    glutDisplayFunc(display);
-//    glutMainLoop();
+	/*
+	windowWidth = width;
+	windowHeight = height;
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+    glutInitWindowSize(windowWidth, windowHeight);
+    glutCreateWindow("2009210107_Term");
+    glutReshapeFunc(reshape);
+    glutDisplayFunc(display);
+    glutMainLoop();
+	*/
     return 0;
 }
