@@ -97,24 +97,22 @@ Camera camera;
 Color bgColor;
 
 BoundingBox get_bbox(const Triangle &obj) {
-    float epsilon = 0.01f;
     BoundingBox b = {
         {
-            std::min({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}) - epsilon,
-            std::min({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}) - epsilon,
-            std::min({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z}) - epsilon
+            std::min({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}),
+            std::min({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}),
+            std::min({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z})
         },
         {
-            std::max({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}) + epsilon,
-            std::max({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}) + epsilon,
-            std::max({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z}) + epsilon
+            std::max({obj.vertex[0].x, obj.vertex[1].x, obj.vertex[2].x}),
+            std::max({obj.vertex[0].y, obj.vertex[1].y, obj.vertex[2].y}),
+            std::max({obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z})
         }
     };
     return b;
 }
 
-bool overlaps(const BoundingBox &bbox, const Triangle &obj) {
-    BoundingBox b = get_bbox(obj);
+bool overlaps(const BoundingBox &bbox, const BoundingBox &b) {
     return !((b.max.x < bbox.min.x)
       || (b.max.y < bbox.min.y)
       || (b.max.z < bbox.min.z)
@@ -123,8 +121,16 @@ bool overlaps(const BoundingBox &bbox, const Triangle &obj) {
       || (b.min.z > bbox.max.z));
 }
 
+BoundingBox extend(const BoundingBox &bbox, float d) {
+    BoundingBox e = {
+        {bbox.min.x - d, bbox.min.y - d, bbox.min.z - d},
+        {bbox.max.x + d, bbox.max.y + d, bbox.max.z + d}
+    };
+    return e;
+}
+
 void _buildOctree(OctreeNode *node, int depth) {
-    if (depth > OCTREE_DEPTH) return;
+    if (depth == OCTREE_DEPTH) return;
     BoundingBox b = node->bounds;
     Vec3 center = (b.min + b.max) / 2.0f;
     BoundingBox bboxes[8] = {
@@ -139,10 +145,10 @@ void _buildOctree(OctreeNode *node, int depth) {
     };
     for (int j = 0; j < 8; j++) {
         OctreeNode *n = new OctreeNode;
-        n->bounds = bboxes[j];
+        n->bounds = extend(bboxes[j], 1e-3f);
         std::fill_n(n->subnodes, 8, nullptr);
         for (int i : node->objects) {
-            if (overlaps(bboxes[j], triangles[i])) {
+            if (overlaps(n->bounds, get_bbox(triangles[i]))) {
                 n->objects.push_back(i);
             }
         }
@@ -154,10 +160,9 @@ void _buildOctree(OctreeNode *node, int depth) {
 }
 
 void buildOctree() {
-    float epsilon = 0.01f;
     float size = 5;
-    octreeRoot.bounds.min = {-size + epsilon, -size + epsilon, -size + epsilon};
-    octreeRoot.bounds.max = {size + epsilon, size + epsilon, size + epsilon};
+    octreeRoot.bounds.min = {-size, -size, -size};
+    octreeRoot.bounds.max = {size, size, size};
     for (int i = 0; i < triangles.size(); i++)
         octreeRoot.objects.push_back(i);
     _buildOctree(&octreeRoot, 0);
@@ -177,45 +182,38 @@ bool intersectBboxRay(const BoundingBox &bbox, const Vec3 &rayFrom, const Vec3 &
         // bbox contains rayFrom
         return true;
     
-    Vec3 c = bbox.min;
     Vec3 p;
     
-    c.z = bbox.min.z;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.min, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
         return true;
     }
     
-    c.z = bbox.max.z;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 0, 1}), bbox.max, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
         return true;
     }
     
-    c.y = bbox.min.y;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.min, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    c.y = bbox.max.y;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({0, 1, 0}), bbox.max, p)
        && (p.x > bbox.min.x) && (p.x < bbox.max.x)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    c.x = bbox.min.x;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.min, p)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
         return true;
     }
     
-    c.x = bbox.max.x;
     if(intersectRayPlane(rayFrom, normalizedRayDir, Vec3({1, 0, 0}), bbox.max, p)
        && (p.y > bbox.min.y) && (p.y < bbox.max.y)
        && (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
@@ -241,14 +239,21 @@ bool findNode(OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDi
             }
         }
     } else {
+        bool allnull = true;
         for (OctreeNode *subnode : node->subnodes) {
             if (subnode == nullptr)
                 continue;
             
+            allnull = false;
             if (intersectBboxRay(subnode->bounds, rayFrom, normalizedRayDir)) {
                 if (findNode(subnode, rayFrom, normalizedRayDir, depth + 1, excludeId, nearestId, nearestDist))
                     found = true;
             }
+        }
+        if (allnull) {
+            // yeah!
+            if (findNode(node, rayFrom, normalizedRayDir, OCTREE_DEPTH, excludeId, nearestId, nearestDist))
+                found = true;
         }
     }
     return found;
@@ -372,7 +377,7 @@ Color _renderPixel(Vec3 rayFrom, Vec3 normalizedRayDir, ObjectId prevObjectID, i
             }
         }
     }
-    return c;
+    return glm::clamp(c, 0.0f, 1.0f);
 }
 
 Color renderPixel(const Vec3 &p) {
@@ -472,15 +477,6 @@ void readModel(std::string path, float scaleFactor, Material *material) {
     std::cout << "vertex: " << vs.size() << std::endl;
 }
 
-inline unsigned char quantize(float c) {
-    int b = c * 255;
-    if (b < 0)
-        return 0;
-    if (b > 255)
-        return 255;
-    return b;
-}
-
 int main(int argc, char *argv[]) {
     Material copper = {{0.329412, 0.223529, 0.027451},
         {0.780392, 0.568627, 0.113725},
@@ -501,17 +497,17 @@ int main(int argc, char *argv[]) {
     glass.refraction = 1.53f;
     glass.refractionFactor = 1.0f;
 //    spheres.push_back({{-0.35, 0.15, 0.0}, 0.1, &glass});
-    spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
-    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
-    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
+//    spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
+//    spheres.push_back({{0.2, 0.1, 0.0}, 0.05, &chrome});
+//    spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
     
-    float w = 0.5, front = 0.3, back = -0.3, h = 1.0;
-    triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
-    triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
-    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
-    triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
-    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
-    triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
+//    float w = 0.5, front = 0.3, back = -0.3, h = 1.0;
+//    triangles.push_back(make_triangle({-w, 0, back}, {-w, 0, front}, {w, 0, back}, &chrome));
+//    triangles.push_back(make_triangle({w, 0, back}, {-w, 0, front}, {w, 0, front}, &chrome));
+//    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
+//    triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
+//    triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
+//    triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
     readModel("/Users/ditto/Downloads/2009210107_3/2009210107_3.obj", 0.5, &copper);
 #ifdef ENABLE_OCTREE
     buildOctree();
@@ -525,11 +521,11 @@ int main(int argc, char *argv[]) {
     camera.zFar = 10.0;
     camera.fovy = 60;
     bgColor = {0.0, 0.0, 0.0};
-    lights.push_back({POINT, {0.0, 5.0, 0.0}, 1.0, {1.0, 1.0, 1.0}});
-    lights.push_back({POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
-    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
-    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
+    lights.push_back({POINT, {0.0, 0.0, 1.0}, 1.0, {1.0, 0.0, 0.0}});
+//    lights.push_back({POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
+//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
+//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
+//    lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
     lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, -1.0f})), 1.0, {1.0, 1.0, 0.0}});
 
     const int width = 640, height = 480;
@@ -541,9 +537,9 @@ int main(int argc, char *argv[]) {
     for (int y = height - 1; y >= 0; y--) {
         for (int x = 0; x < width; x++) {
             Color c = data[y * width + x];
-            bytedata[i++] = quantize(c.r); // r
-            bytedata[i++] = quantize(c.g); // g
-            bytedata[i++] = quantize(c.b); // b
+            bytedata[i++] = 255 * c.r; // r
+            bytedata[i++] = 255 * c.g; // g
+            bytedata[i++] = 255 * c.b; // b
         }
     }
     stbi_write_png("out.png", width, height, 3, bytedata, 0);
