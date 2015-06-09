@@ -11,6 +11,8 @@
 #include "glm/vector_relational.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/intersect.hpp"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 #define ENABLE_OCTREE
 
@@ -470,6 +472,15 @@ void readModel(std::string path, float scaleFactor, Material *material) {
     std::cout << "vertex: " << vs.size() << std::endl;
 }
 
+inline unsigned char quantize(float c) {
+    int b = c * 255;
+    if (b < 0)
+        return 0;
+    if (b > 255)
+        return 255;
+    return b;
+}
+
 int main(int argc, char *argv[]) {
     Material copper = {{0.329412, 0.223529, 0.027451},
         {0.780392, 0.568627, 0.113725},
@@ -521,12 +532,28 @@ int main(int argc, char *argv[]) {
     lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, 0.0f})), 1.0, {1.0, 1.0, 0.0}});
     lights.push_back({DIRECTIONAL, glm::normalize(Vec3({-0.5f, -0.5f, -1.0f})), 1.0, {1.0, 1.0, 0.0}});
 
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(windowWidth = 640, windowHeight = 360);
-    glutCreateWindow("2009210107_Term");
-    glutReshapeFunc(reshape);
-    glutDisplayFunc(display);
-    glutMainLoop();
+    const int width = 640, height = 480;
+    camera.aspect = (float)width / height;
+    Color *data = new Color[width * height];
+    render(data, width, height);
+    unsigned char *bytedata = new unsigned char[width * height * 3]; // RGB
+    int i = 0;
+    for (int y = height - 1; y >= 0; y--) {
+        for (int x = 0; x < width; x++) {
+            Color c = data[y * width + x];
+            bytedata[i++] = quantize(c.r); // r
+            bytedata[i++] = quantize(c.g); // g
+            bytedata[i++] = quantize(c.b); // b
+        }
+    }
+    stbi_write_png("out.png", width, height, 3, bytedata, 0);
+
+//    glutInit(&argc, argv);
+//    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+//    glutInitWindowSize(windowWidth = 640, windowHeight = 360);
+//    glutCreateWindow("2009210107_Term");
+//    glutReshapeFunc(reshape);
+//    glutDisplayFunc(display);
+//    glutMainLoop();
     return 0;
 }

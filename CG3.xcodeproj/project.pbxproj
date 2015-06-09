@@ -29,6 +29,7 @@
 		2762F2241AF08EBA00494F2C /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
 		2762F22B1AF08EDD00494F2C /* GLUT.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLUT.framework; path = System/Library/Frameworks/GLUT.framework; sourceTree = SDKROOT; };
 		2762F22C1AF08EDD00494F2C /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
+		276B41881B26AE83003C6E20 /* stb_image_write.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = stb_image_write.h; sourceTree = "<group>"; };
 		27DFA3D81B0071BD0051000A /* glm */ = {isa = PBXFileReference; lastKnownFileType = folder; path = glm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -66,6 +67,7 @@
 		2762F2231AF08EBA00494F2C /* CG3 */ = {
 			isa = PBXGroup;
 			children = (
+				276B41881B26AE83003C6E20 /* stb_image_write.h */,
 				27DFA3D81B0071BD0051000A /* glm */,
 				2762F2241AF08EBA00494F2C /* main.cpp */,
 			);
