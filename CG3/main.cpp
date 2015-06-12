@@ -89,7 +89,8 @@ struct OctreeNode {
 	bool leaf;
 };
 
-const int OCTREE_DEPTH = 5;
+const int OCTREE_DEPTH = 7;
+const int OCTREE_MAX_OBJ = 100;
 const int DEPTH_LIMIT = 4;
 int windowWidth;
 int windowHeight;
@@ -134,7 +135,10 @@ bool overlaps(const BoundingBox &bbox, const BoundingBox &b) {
       || (b.min.z > bbox.max.z));
 }
 
+int stat_emptyNode = 0, stat_overMax = 0, stat_overDepth = 0;
+
 void splitOctreeNode(OctreeNode *node, int depth) {
+    node->leaf = false;
     BoundingBox b = node->bounds;
     Vec3 center = (b.min + b.max) / 2.0f;
     BoundingBox bboxes[8] = {
@@ -151,20 +155,27 @@ void splitOctreeNode(OctreeNode *node, int depth) {
         OctreeNode *subnode = new OctreeNode;
 		subnode->leaf = true;
 		subnode->bounds = extend(bboxes[j], 1e-2f);
+        int n = 0;
         for (int i : node->objects) {
 			if (overlaps(subnode->bounds, get_bbox(triangles[i]))) {
 				subnode->objects.push_back(i);
+                n++;
             }
         }
-		if (subnode->objects.size() == 0) {
+		if (n == 0) {
+            stat_emptyNode++;
 			delete subnode;
 			subnode = nullptr;
 		}
+        else if (depth >= OCTREE_DEPTH) {
+            stat_overDepth++;
+        }
+        else if (n < OCTREE_MAX_OBJ) {
+            stat_overMax++;
+        }
 		else {
-			node->leaf = false;
-			if (depth < OCTREE_DEPTH)
-				splitOctreeNode(subnode, depth + 1);
-		}
+            splitOctreeNode(subnode, depth + 1);
+        }
         node->subnodes[j] = subnode;
     }
 }
@@ -175,8 +186,10 @@ void buildOctree() {
     octreeRoot.bounds.max = {size, size, size};
     for (int i = 0; i < triangles.size(); i++)
         octreeRoot.objects.push_back(i);
-	octreeRoot.leaf = true;
     splitOctreeNode(&octreeRoot, 0);
+    std::cout << "built octree: empty=" << stat_emptyNode <<
+        " overDepth=" << stat_overDepth <<
+        " overMax=" << stat_overMax << std::endl;
 }
 
 bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, float planeD, Vec3 &p) {
