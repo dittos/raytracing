@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <future>
 #include "glm/geometric.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -84,9 +85,6 @@ static void setupScene(Scene &scene) {
 	//    scene.triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
 	    readModel(scene, "2009210107_3.obj", 0.5, &copper);
 
-	scene.camera.position = { 0.0, 0.2, 0.7 };
-	scene.camera.at = { 0.0, 0.1, 0.0 };
-	scene.camera.up = { 0.0, 1.0, 0.0 };
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
 	scene.camera.fovy = 60;
@@ -99,34 +97,11 @@ static void setupScene(Scene &scene) {
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
 }
 
-//int main(int argc, char *argv[]) {
-//	Scene scene;
-//	setupScene(scene);
-//
-//    const int width = 1280, height = 720;
-//	scene.camera.aspect = (float)width / height;
-//    unsigned int *data = new unsigned int[width * height];
-//    render(scene, data, width, height);
-//    unsigned char *bytedata = new unsigned char[width * height * 3]; // RGB
-//    int i = 0;
-//    for (int y = height - 1; y >= 0; y--) {
-//        for (int x = 0; x < width; x++) {
-//            Color c = data[y * width + x];
-//            bytedata[i++] = 255 * c.r; // r
-//            bytedata[i++] = 255 * c.g; // g
-//            bytedata[i++] = 255 * c.b; // b
-//        }
-//    }
-//    stbi_write_png("out.png", width, height, 3, bytedata, 0);
-//    return 0;
-//}
-
 #ifndef IDC_STATIC
 #define IDC_STATIC (-1)
 #endif
 
 #define IDD_DIALOG1                             100
-#define ID_RENDER                               40000
 #define ID_STATUS                               40001
 #define ID_CAMPOSY                              40002
 #define ID_CAMPOSZ                              40003
@@ -146,7 +121,79 @@ static void setupScene(Scene &scene) {
 HWND ctrlWnd, renderWnd;
 Scene scene;
 unsigned int *pixels;
+RenderParams params;
 BITMAPINFO bitmapInfo;
+time_t renderStartTime;
+
+static void onTimer(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
+	InvalidateRect(renderWnd, NULL, FALSE);
+}
+
+static void renderWrapper() {
+	render(scene, pixels, params);
+	PostMessage(ctrlWnd, WM_USER + 1, 0, 0);
+}
+
+static float GetDlgItemFloat(int dlgItem) {
+	WCHAR buf[20];
+	UINT len = GetDlgItemText(ctrlWnd, dlgItem, buf, 20);
+	std::wstringstream ss;
+	ss.write(buf, len);
+	float result;
+	ss >> result;
+	return result;
+}
+
+static void setupRenderParams() {
+	int w = GetDlgItemInt(ctrlWnd, ID_RESW, NULL, FALSE);
+	int h = GetDlgItemInt(ctrlWnd, ID_RESH, NULL, FALSE);
+	delete pixels;
+	pixels = new unsigned int[w * h];
+	bitmapInfo.bmiHeader = { sizeof(BITMAPINFOHEADER), w, h, 1, 32, BI_RGB };
+	scene.camera.aspect = (float)w / h;
+	scene.camera.position = { GetDlgItemFloat(ID_CAMPOSX), GetDlgItemFloat(ID_CAMPOSY), GetDlgItemFloat(ID_CAMPOSZ) };
+	scene.camera.at = { GetDlgItemFloat(ID_CAMATX), GetDlgItemFloat(ID_CAMATY), GetDlgItemFloat(ID_CAMATZ) };
+	scene.camera.up = { GetDlgItemFloat(ID_CAMUPX), GetDlgItemFloat(ID_CAMUPY), GetDlgItemFloat(ID_CAMUPZ) };
+	params.width = w;
+	params.height = h;
+	params.enableOctree = IsDlgButtonChecked(ctrlWnd, ID_OCTREE);
+	params.depthLimit = GetDlgItemInt(ctrlWnd, ID_NRAYBOUNCE, NULL, FALSE);
+	params.threads = 4;
+	destroyOctree(scene);
+	if (params.enableOctree)
+		buildOctree(scene);
+}
+
+static void renderPreview() {
+	setupRenderParams();
+	RECT rect;
+	rect.left = 0;
+	rect.right = params.width;
+	rect.top = 0;
+	rect.bottom = params.height;
+	AdjustWindowRectEx(&rect, WS_CAPTION | WS_SYSMENU, false, WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
+	SetWindowPos(renderWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_SHOWWINDOW);
+	SetDlgItemText(ctrlWnd, ID_STATUS, TEXT("Rendering..."));
+	EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), FALSE);
+	renderStartTime = time(NULL);
+	std::async(renderWrapper);
+	SetTimer(ctrlWnd, 1, 1000, (TIMERPROC)onTimer);
+}
+
+//static void renderToFile() {
+//	setupRenderParams();
+//	unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
+//	int i = 0;
+//	for (int y = h - 1; y >= 0; y--) {
+//	    for (int x = 0; x < w; x++) {
+//	        unsigned int c = pixels[y * w + x];
+//	        bytedata[i++] = (c & 0xFF0000) >> 16; // r
+//	        bytedata[i++] = (c & 0x00FF00) >> 8; // g
+//	        bytedata[i++] = (c & 0x0000FF); // b
+//	    }
+//	}
+//	stbi_write_png("out.png", w, h, 3, bytedata, 0);
+//}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -158,42 +205,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		PostQuitMessage(0);
 		break;
 	case WM_COMMAND:
-		if (LOWORD(wParam) == ID_PREVIEW) {
-			int w = GetDlgItemInt(ctrlWnd, ID_RESW, NULL, FALSE);
-			int h = GetDlgItemInt(ctrlWnd, ID_RESH, NULL, FALSE);
-			delete pixels;
-			pixels = new unsigned int[w * h];
-			bitmapInfo.bmiHeader = { sizeof(BITMAPINFOHEADER), w, h, 1, 32, BI_RGB };
-			RenderParams params;
-			scene.camera.aspect = (float)w / h;
-			params.width = w;
-			params.height = h;
-			params.enableOctree = IsDlgButtonChecked(ctrlWnd, ID_OCTREE);
-			params.depthLimit = GetDlgItemInt(ctrlWnd, ID_NRAYBOUNCE, NULL, FALSE);
-			params.threads = 4;
-			destroyOctree(scene);
-			if (params.enableOctree)
-				buildOctree(scene);
-			RECT rect;
-			rect.left = 0;
-			rect.right = w;
-			rect.top = 0;
-			rect.bottom = h;
-			AdjustWindowRectEx(&rect, WS_CAPTION | WS_SYSMENU, false, WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
-			SetWindowPos(renderWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_SHOWWINDOW);
-			SetDlgItemText(ctrlWnd, ID_STATUS, TEXT("Rendering..."));
-			EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), FALSE);
-			EnableWindow(GetDlgItem(ctrlWnd, ID_RENDER), FALSE);
-			int renderTime = render(scene, pixels, params);
-			InvalidateRect(renderWnd, NULL, FALSE);
-			std::wstringstream ss;
-			ss << "Rendered (" << renderTime << " seconds)";
-			SetDlgItemText(ctrlWnd, ID_STATUS, ss.str().c_str());
-			EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), TRUE);
-			EnableWindow(GetDlgItem(ctrlWnd, ID_RENDER), TRUE);
+		switch (LOWORD(wParam)) {
+		case ID_PREVIEW:
+			renderPreview();
 			return 0;
 		}
 		break;
+	case WM_USER + 1: {
+		// render finished
+		KillTimer(ctrlWnd, 1);
+		int renderTime = time(NULL) - renderStartTime;
+		std::wstringstream ss;
+		ss << "Rendered (" << renderTime << " seconds)";
+		SetDlgItemText(ctrlWnd, ID_STATUS, ss.str().c_str());
+		EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), TRUE);
+		InvalidateRect(renderWnd, NULL, FALSE);
+		break;
+	}
 	default:
 		return DefWindowProc(hWnd, uMsg, wParam, lParam);
 	}
@@ -227,10 +255,6 @@ int CALLBACK WinMain(
 	HINSTANCE hPrevInstance,
 	LPSTR     lpCmdLine,
 	int       nCmdShow) {
-	// Generated by ResEdit 1.6.6
-	// Copyright (C) 2006-2015
-	// http://www.resedit.net
-
 	HINSTANCE hInst = GetModuleHandle(0);
 	WNDCLASSEX wcex;
 	ZeroMemory(&wcex, sizeof wcex);
@@ -260,15 +284,13 @@ int CALLBACK WinMain(
 	wcex2.lpszClassName = TEXT("WndClass1");
 	RegisterClassEx(&wcex2);
 
-	//HFONT hfont0 = CreateFont(-11, 0, 0, 0, 400, FALSE, FALSE, FALSE, 1, 400, 0, 0, 0, TEXT("Ms Shell Dlg"));
 	HWND hwnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass0"), TEXT("2009210107_Term"), WS_CAPTION | WS_VISIBLE | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 300, 380, 0, 0, hInst, 0);
 	HWND hCtrl0_0 = CreateWindowEx(0, WC_STATIC, TEXT("Status: Ready"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 312, 263, 20, hwnd, (HMENU)ID_STATUS, hInst, 0);
-	HWND hCtrl0_1 = CreateWindowEx(0, WC_STATIC, TEXT("# of Ray bounce"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 216, 81, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("320"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
+	HWND hCtrl0_1 = CreateWindowEx(0, WC_STATIC, TEXT("Ray bounce"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 216, 100, 15, hwnd, (HMENU)0, hInst, 0);
+	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("640"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
 	HWND hCtrl0_3 = CreateWindowEx(0, WC_STATIC, TEXT("x"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 182, 190, 6, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_4 = CreateWindowEx(0, WC_STATIC, TEXT("Resolution"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 187, 70, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
-	HWND hCtrl0_6 = CreateWindowEx(0, WC_BUTTON, TEXT("Render to file"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 144, 280, 122, 23, hwnd, (HMENU)ID_RENDER, hInst, 0);
+	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
 	HWND hCtrl0_7 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Position"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 16, 78, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_8 = CreateWindowEx(0, WC_STATIC, TEXT("X:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_9 = CreateWindowEx(0, WC_BUTTON, TEXT("Preview"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | 0x00000001, 8, 280, 128, 23, hwnd, (HMENU)ID_PREVIEW, hInst, 0);
@@ -276,16 +298,16 @@ int CALLBACK WinMain(
 	HWND hCtrl0_11 = CreateWindowEx(0, WC_STATIC, TEXT("Y:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 105, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_12 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_13 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSY, hInst, 0);
-	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("0.7"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
-	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("180"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
-	HWND hCtrl0_16 = CreateWindowEx(0, WC_EDIT, TEXT("4"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 215, 75, 21, hwnd, (HMENU)ID_NRAYBOUNCE, hInst, 0);
+	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
+	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("360"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
+	HWND hCtrl0_16 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 215, 75, 21, hwnd, (HMENU)ID_NRAYBOUNCE, hInst, 0);
 	HWND hCtrl0_17 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Look At"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 73, 78, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_18 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 98, 53, 20, hwnd, (HMENU)ID_CAMATX, hInst, 0);
 	HWND hCtrl0_19 = CreateWindowEx(0, WC_STATIC, TEXT("X:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_20 = CreateWindowEx(0, WC_STATIC, TEXT("Y:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 105, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_21 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_22 = CreateWindowEx(0, WC_EDIT, TEXT("0.1"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 98, 53, 20, hwnd, (HMENU)ID_CAMATY, hInst, 0);
-	HWND hCtrl0_23 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 98, 53, 20, hwnd, (HMENU)ID_CAMATZ, hInst, 0);
+	HWND hCtrl0_18 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 98, 53, 20, hwnd, (HMENU)ID_CAMATX, hInst, 0);
+	HWND hCtrl0_22 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 98, 53, 20, hwnd, (HMENU)ID_CAMATY, hInst, 0);
+	HWND hCtrl0_23 = CreateWindowEx(0, WC_EDIT, TEXT("0.1"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 98, 53, 20, hwnd, (HMENU)ID_CAMATZ, hInst, 0);
 	HWND hCtrl0_24 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Up Vector"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 130, 89, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_25 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 154, 53, 20, hwnd, (HMENU)ID_CAMUPX, hInst, 0);
 	HWND hCtrl0_26 = CreateWindowEx(0, WC_STATIC, TEXT("X:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 154, 12, 15, hwnd, (HMENU)0, hInst, 0);
@@ -298,18 +320,6 @@ int CALLBACK WinMain(
 	ctrlWnd = hwnd;
 	renderWnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass1"), TEXT("Preview"), WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, hInst, 0);
 	setupScene(scene);
-
-	//unsigned char *bytedata = new unsigned char[w * h * 3]; // RGB
-	//int i = 0;
-	//for (int y = h - 1; y >= 0; y--) {
-	//    for (int x = 0; x < w; x++) {
-	//        unsigned int c = pixels[y * w + x];
-	//        bytedata[i++] = (c & 0xFF0000) >> 16; // r
-	//        bytedata[i++] = (c & 0x00FF00) >> 8; // g
-	//        bytedata[i++] = (c & 0x0000FF); // b
-	//    }
-	//}
-	//stbi_write_png("out.png", w, h, 3, bytedata, 0);
 
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))

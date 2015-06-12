@@ -352,8 +352,7 @@ static void _render(const Scene &scene, unsigned int *pixels, const RenderParams
 	}
 }
 
-int render(const Scene &scene, unsigned int *pixels, const RenderParams &params) {
-	time_t start = time(NULL);
+void render(const Scene &scene, unsigned int *pixels, const RenderParams &params) {
 	Mat4 proj = glm::perspective(scene.camera.fovy * 3.14159265358979323846f / 180.0f, scene.camera.aspect, scene.camera.zNear, scene.camera.zFar) *
 		glm::lookAt(scene.camera.position, scene.camera.at, scene.camera.up);
 	glm::vec4 viewport(0, 0, params.width, params.height);
@@ -364,6 +363,4 @@ int render(const Scene &scene, unsigned int *pixels, const RenderParams &params)
 	for (int i = 0; i < tasks.size(); i++) {
 		tasks[i].get();
 	}
-	time_t end = time(NULL);
-	return end - start;
 }

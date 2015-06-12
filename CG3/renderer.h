@@ -92,4 +92,4 @@ struct RenderParams {
 
 void buildOctree(Scene &scene);
 void destroyOctree(Scene &scene);
-int render(const Scene &scene, unsigned int *pixels, const RenderParams &params);
+void render(const Scene &scene, unsigned int *pixels, const RenderParams &params);
