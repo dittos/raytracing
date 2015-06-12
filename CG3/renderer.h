@@ -1,17 +1,9 @@
 #ifdef WIN32
 #define _CRT_SECURE_NO_WARNINGS
 #endif
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <vector>
-#include <cmath>
-#include <future>
 #include "glm/vec3.hpp"
 #include "glm/mat4x4.hpp"
-#include "glm/vector_relational.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "glm/gtx/intersect.hpp"
 
 typedef glm::vec3 Color;
 typedef glm::vec3 Vec3;
@@ -99,4 +91,5 @@ struct RenderParams {
 };
 
 void buildOctree(Scene &scene);
-void render(const Scene &scene, unsigned int *pixels, const RenderParams &params);
+void destroyOctree(Scene &scene);
+int render(const Scene &scene, unsigned int *pixels, const RenderParams &params);

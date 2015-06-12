@@ -1,3 +1,7 @@
+#include <iostream>
+#include <future>
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtx/intersect.hpp"
 #include "renderer.h"
 
 const int OCTREE_DEPTH = 7;
@@ -93,6 +97,23 @@ void buildOctree(Scene &scene) {
 		" overMax=" << stat_overMax << std::endl;
 }
 
+static void deleteNode(OctreeNode *node) {
+	if (!node->leaf) {
+		for (int i = 0; i < 8; i++) {
+			if (node->subnodes[i] != nullptr) {
+				deleteNode(node->subnodes[i]);
+				delete node->subnodes[i];
+				node->subnodes[i] = nullptr;
+			}
+		}
+	}
+}
+
+void destroyOctree(Scene &scene) {
+	scene.octreeRoot.objects.clear();
+	deleteNode(&scene.octreeRoot);
+}
+
 static bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, float planeD, Vec3 &p) {
 	float d = glm::dot(normalizedRayDir, planeNormal);
 	if (d != 0) {
@@ -185,6 +206,18 @@ static bool findNode(const Scene &scene, const OctreeNode *node, const Vec3 &ray
 	return found;
 }
 
+static bool intersectRaySphere(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &center, float radius, float &distance) {
+	float len = glm::dot(normalizedRayDir, center - rayFrom);
+	if (len < 0.f) // behind the ray
+		return false;
+	Vec3 d = center - (rayFrom + normalizedRayDir * len);
+	float dst2 = glm::dot(d, d);
+	float r2 = radius * radius;
+	if (dst2 > r2) return false;
+	distance = len - sqrt(r2 - dst2);
+	return true;
+}
+
 static bool findNearestObject(const Scene &scene, const RenderParams &params, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
 	bool found = false;
 	float nearestDist = std::numeric_limits<float>::max();
@@ -194,16 +227,15 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 		const Sphere &obj = scene.spheres[i];
 		if (excludeTransparentMat && obj.material->refract)
 			continue;
-		Vec3 pos, norm;
-		if (glm::intersectRaySphere(rayFrom, normalizedRayDir, obj.center, obj.radius, pos, norm)) {
-			float distance = glm::distance(rayFrom, pos);
+		float distance;
+		if (intersectRaySphere(rayFrom, normalizedRayDir, obj.center, obj.radius, distance)) {
 			if (distance < nearestDist) {
 				found = true;
 				nearestDist = distance;
 				nearestObjectID.type = SPHERE;
 				nearestObjectID.index = i;
-				nearestPos = pos;
-				nearestNorm = norm;
+				nearestPos = rayFrom + normalizedRayDir * distance;
+				nearestNorm = (nearestPos - obj.center) / obj.radius;
 				*nearestMat = obj.material;
 				isInside = glm::distance(rayFrom, obj.center) < obj.radius;
 			}
@@ -235,7 +267,7 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 					nearestDist = distance;
 					nearestObjectID.type = TRIANGLE;
 					nearestObjectID.index = i;
-					nearestPos = rayFrom + normalizedRayDir * baryPos.z;
+					nearestPos = rayFrom + normalizedRayDir * distance;
 					nearestNorm = obj.norm;
 					*nearestMat = obj.material;
 					isInside = false;
@@ -320,7 +352,7 @@ static void _render(const Scene &scene, unsigned int *pixels, const RenderParams
 	}
 }
 
-void render(const Scene &scene, unsigned int *pixels, const RenderParams &params) {
+int render(const Scene &scene, unsigned int *pixels, const RenderParams &params) {
 	time_t start = time(NULL);
 	Mat4 proj = glm::perspective(scene.camera.fovy * 3.14159265358979323846f / 180.0f, scene.camera.aspect, scene.camera.zNear, scene.camera.zFar) *
 		glm::lookAt(scene.camera.position, scene.camera.at, scene.camera.up);
@@ -333,5 +365,5 @@ void render(const Scene &scene, unsigned int *pixels, const RenderParams &params
 		tasks[i].get();
 	}
 	time_t end = time(NULL);
-	std::cout << "time: " << end - start << std::endl;
+	return end - start;
 }

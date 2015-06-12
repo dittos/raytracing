@@ -1,16 +1,16 @@
 #ifdef WIN32
 #define _CRT_SECURE_NO_WARNINGS
-#include <glut.h>
 #include <Windows.h>
 #include <CommCtrl.h>
-#else
-#include <OpenGL/GL.h>
-#include <GLUT/GLUT.h>
 #endif
 
-#include "renderer.h"
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include "glm/geometric.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "renderer.h"
 
 static Triangle make_triangle(Vec3 v0, Vec3 v1, Vec3 v2, Material *material) {
 	Triangle t{ { v0, v1, v2 }, glm::normalize(glm::cross(v1 - v0, v2 - v0)), material };
@@ -82,7 +82,7 @@ static void setupScene(Scene &scene) {
 	//    scene.triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
 	//    scene.triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
 	//    scene.triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
-	//    readModel(scene, "2009210107_3.obj", 0.5, &copper);
+	    readModel(scene, "2009210107_3.obj", 0.5, &copper);
 
 	scene.camera.position = { 0.0, 0.2, 0.7 };
 	scene.camera.at = { 0.0, 0.1, 0.0 };
@@ -143,9 +143,9 @@ static void setupScene(Scene &scene) {
 #define ID_OCTREE                               40014
 #define ID_PREVIEW                              40015
 
-HWND renderWnd;
+HWND ctrlWnd, renderWnd;
+Scene scene;
 unsigned int *pixels;
-unsigned int **strides;
 BITMAPINFO bitmapInfo;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -159,7 +159,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_COMMAND:
 		if (LOWORD(wParam) == ID_PREVIEW) {
-			ShowWindow(renderWnd, SW_SHOW);
+			int w = GetDlgItemInt(ctrlWnd, ID_RESW, NULL, FALSE);
+			int h = GetDlgItemInt(ctrlWnd, ID_RESH, NULL, FALSE);
+			delete pixels;
+			pixels = new unsigned int[w * h];
+			bitmapInfo.bmiHeader = { sizeof(BITMAPINFOHEADER), w, h, 1, 32, BI_RGB };
+			RenderParams params;
+			scene.camera.aspect = (float)w / h;
+			params.width = w;
+			params.height = h;
+			params.enableOctree = IsDlgButtonChecked(ctrlWnd, ID_OCTREE);
+			params.depthLimit = GetDlgItemInt(ctrlWnd, ID_NRAYBOUNCE, NULL, FALSE);
+			params.threads = 4;
+			destroyOctree(scene);
+			if (params.enableOctree)
+				buildOctree(scene);
+			RECT rect;
+			rect.left = 0;
+			rect.right = w;
+			rect.top = 0;
+			rect.bottom = h;
+			AdjustWindowRectEx(&rect, WS_CAPTION | WS_SYSMENU, false, WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
+			SetWindowPos(renderWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_SHOWWINDOW);
+			SetDlgItemText(ctrlWnd, ID_STATUS, TEXT("Rendering..."));
+			EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), FALSE);
+			EnableWindow(GetDlgItem(ctrlWnd, ID_RENDER), FALSE);
+			int renderTime = render(scene, pixels, params);
+			InvalidateRect(renderWnd, NULL, FALSE);
+			std::wstringstream ss;
+			ss << "Rendered (" << renderTime << " seconds)";
+			SetDlgItemText(ctrlWnd, ID_STATUS, ss.str().c_str());
+			EnableWindow(GetDlgItem(ctrlWnd, ID_PREVIEW), TRUE);
+			EnableWindow(GetDlgItem(ctrlWnd, ID_RENDER), TRUE);
+			return 0;
 		}
 		break;
 	default:
@@ -229,12 +261,12 @@ int CALLBACK WinMain(
 	RegisterClassEx(&wcex2);
 
 	//HFONT hfont0 = CreateFont(-11, 0, 0, 0, 400, FALSE, FALSE, FALSE, 1, 400, 0, 0, 0, TEXT("Ms Shell Dlg"));
-	HWND hwnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass0"), TEXT("Dialog"), WS_CAPTION | WS_VISIBLE | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 300, 380, 0, 0, hInst, 0);
-	HWND hCtrl0_0 = CreateWindowEx(0, WC_STATIC, TEXT("Status: Ready"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 312, 263, 15, hwnd, (HMENU)ID_STATUS, hInst, 0);
+	HWND hwnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass0"), TEXT("2009210107_Term"), WS_CAPTION | WS_VISIBLE | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 300, 380, 0, 0, hInst, 0);
+	HWND hCtrl0_0 = CreateWindowEx(0, WC_STATIC, TEXT("Status: Ready"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 312, 263, 20, hwnd, (HMENU)ID_STATUS, hInst, 0);
 	HWND hCtrl0_1 = CreateWindowEx(0, WC_STATIC, TEXT("# of Ray bounce"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 216, 81, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("320"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
 	HWND hCtrl0_3 = CreateWindowEx(0, WC_STATIC, TEXT("x"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 182, 190, 6, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_4 = CreateWindowEx(0, WC_STATIC, TEXT("Resolution"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 187, 51, 15, hwnd, (HMENU)0, hInst, 0);
+	HWND hCtrl0_4 = CreateWindowEx(0, WC_STATIC, TEXT("Resolution"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 187, 70, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
 	HWND hCtrl0_6 = CreateWindowEx(0, WC_BUTTON, TEXT("Render to file"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 144, 280, 122, 23, hwnd, (HMENU)ID_RENDER, hInst, 0);
 	HWND hCtrl0_7 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Position"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 16, 78, 15, hwnd, (HMENU)0, hInst, 0);
@@ -263,24 +295,9 @@ int CALLBACK WinMain(
 	HWND hCtrl0_30 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 154, 53, 20, hwnd, (HMENU)ID_CAMUPZ, hInst, 0);
 	CheckDlgButton(hwnd, ID_OCTREE, BST_CHECKED);
 
-	int w = 320, h = 180;
-	renderWnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass1"), TEXT("Dialog"), WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, w, h, 0, 0, hInst, 0);
-
-	pixels = new unsigned int[w * h];
-	bitmapInfo.bmiHeader = {sizeof(BITMAPINFOHEADER), w, h, 1, 32, BI_RGB};
-
-	Scene scene;
-	RenderParams params;
+	ctrlWnd = hwnd;
+	renderWnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass1"), TEXT("Preview"), WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, hInst, 0);
 	setupScene(scene);
-	scene.camera.aspect = (float)w / h;
-	params.width = w;
-	params.height = h;
-	params.enableOctree = true;
-	params.depthLimit = 2;
-	params.threads = 4;
-	if (params.enableOctree)
-		buildOctree(scene);
-	render(scene, pixels, params);
 
 	//unsigned char *bytedata = new unsigned char[w * h * 3]; // RGB
 	//int i = 0;
