@@ -339,7 +339,7 @@ bool isShaded(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId 
     return findNearestObject(rayFrom, normalizedRayDir, excludeObjectID, true, a, b, c, &m, isInside);
 }
 
-Color _renderPixel(Vec3 &rayFrom, Vec3 &normalizedRayDir, ObjectId prevObjectID, int depth, float rIndex) {
+Color _renderPixel(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, ObjectId prevObjectID, int depth, float rIndex) {
     ObjectId objectID;
     Vec3 pos, norm;
     Material *m;
