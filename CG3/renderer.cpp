@@ -270,7 +270,19 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 		return scene.bgColor;
 	}
 
-	Color c = scene.bgColor * m->ambientFactor;
+	Color texture = { 1.0, 1.0, 1.0 };
+	if (m->texFunc && objectID.type == TRIANGLE) {
+		const Triangle &obj = scene.triangles[objectID.index];
+		Vec3 f1 = obj.vertex[0] - pos;
+		Vec3 f2 = obj.vertex[1] - pos;
+		Vec3 f3 = obj.vertex[2] - pos;
+		float a = glm::length(glm::cross(obj.vertex[0] - obj.vertex[1], obj.vertex[1] - obj.vertex[2]));
+		float a1 = glm::length(glm::cross(f2, f3)) / a;
+		float a2 = glm::length(glm::cross(f3, f1)) / a;
+		float a3 = glm::length(glm::cross(f1, f2)) / a;
+		texture = m->texFunc(obj.texCoord[0] * a1 + obj.texCoord[1] * a2 + obj.texCoord[2] * a3);
+	}
+	Color c = scene.bgColor * m->ambientFactor * texture;
 	Vec3 reflectionDir = glm::normalize(glm::reflect(ray.dir, norm));
 	if (!m->refract) {
 		for (const Light &light : scene.lights) {
@@ -289,7 +301,7 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 
 			float s = glm::dot(norm, lightDir);
 			if (s > 0.0f && !isShaded(scene, params, { pos, lightDir }, objectID)) {
-				Color diffuse(s * light.intensity);
+				Color diffuse(s * light.intensity * texture);
 				c += diffuse * light.color * m->diffuseFactor;
 			}
 

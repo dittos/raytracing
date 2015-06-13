@@ -9,6 +9,8 @@ typedef glm::vec3 Color;
 typedef glm::vec3 Vec3;
 typedef glm::mat4 Mat4;
 
+typedef std::function<Color(glm::vec2)> TextureFunc;
+
 enum ObjectType {
 	INVALID,
 	SPHERE,
@@ -27,6 +29,7 @@ struct Material {
 	bool refract;
 	float refraction;
 	float refractionFactor;
+	TextureFunc texFunc;
 };
 
 struct Sphere {
@@ -39,6 +42,7 @@ struct Triangle {
 	Vec3 vertex[3];
 	Vec3 norm;
 	Material *material;
+	glm::vec2 texCoord[3];
 };
 
 struct Camera {

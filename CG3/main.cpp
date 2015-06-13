@@ -18,6 +18,14 @@ static Triangle make_triangle(Vec3 v0, Vec3 v1, Vec3 v2, Material *material) {
 	return t;
 }
 
+static Triangle make_triangle(Vec3 v0, glm::vec2 t0, Vec3 v1, glm::vec2 t1, Vec3 v2, glm::vec2 t2, Material *material) {
+	Triangle t{ { v0, v1, v2 }, glm::normalize(glm::cross(v1 - v0, v2 - v0)), material };
+	t.texCoord[0] = t0;
+	t.texCoord[1] = t1;
+	t.texCoord[2] = t2;
+	return t;
+}
+
 static void readModel(Scene &scene, std::string path, float scaleFactor, Material *material) {
 	std::ifstream f(path);
 	std::string line;
@@ -66,36 +74,86 @@ Material glass = { { 0.25, 0.25, 0.25 },
 { 0.774597, 0.774597, 0.774597 },
 76.8,
 0.0 };
+Material obsidian = {
+		{ 0.05375, 0.05, 0.06625 },
+		{ 0.18275, 0.17, 0.22525 },
+		{ 0.332741, 0.328634, 0.346435 },
+		38.4,
+		0.0
+};
+static Color checkerTexture(glm::vec2 texCoord) {
+	if (((int)(texCoord.x * 20) % 2 == 0) ^ ((int)(texCoord.y * 20) % 2 == 0))
+		return Color(0, 0, 0);
+	else
+		return Color(1, 1, 1);
+}
+
+Material checker = {
+		{ 0, 0, 0 },
+		{ 1, 1, 1 },
+		{ 0.332741, 0.328634, 0.346435 },
+		38.4,
+		0.0
+};
+
+Material wall1 = {
+		{ 0, 0, 0 },
+		{ 1, 1, 1 },
+		{ 0.332741, 0.328634, 0.346435 },
+		38.4,
+		0.0
+};
+Material wall2 = {
+		{ 0, 0, 0 },
+		{ 1, 1, 1 },
+		{ 0.332741, 0.328634, 0.346435 },
+		38.4,
+		0.0
+};
+Material wall3 = {
+		{ 0, 0.5, 1 },
+		{ 1, 1, 1 },
+		{ 0.332741, 0.328634, 0.346435 },
+		38.4,
+		0.0
+};
+
+static void addPlane(Scene &scene, Vec3 lefttop, glm::vec2 uv0, Vec3 leftbottom, glm::vec2 uv1, Vec3 rightbottom, glm::vec2 uv2, Vec3 righttop, glm::vec2 uv3, Material *mat) {
+	scene.triangles.push_back(make_triangle(lefttop, uv0, leftbottom, uv1, righttop, uv3, mat));
+	scene.triangles.push_back(make_triangle(righttop, uv3, leftbottom, uv1, rightbottom, uv2, mat));
+}
 
 static void setupScene(Scene &scene) {
+	checker.texFunc = checkerTexture;
+	wall1.texFunc = [](glm::vec2 texCoord) { return Color(1, texCoord.y, 0); };
+	wall2.texFunc = [](glm::vec2 texCoord) { return Color(0, texCoord.y, 1); };
+	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y, 0, 1); };
 	glass.refract = true;
 	glass.refraction = 1.3f;
 	glass.refractionFactor = 1.0f;
-	scene.spheres.push_back({{0.2, 0.2, 0.0}, 0.02, &glass});
+	//scene.spheres.push_back({ { 0.0, 0.2, 0.5 }, 0.02, &glass });
 	//    scene.spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
 	scene.spheres.push_back({ { 0.25, 0.1, 0.0 }, 0.1, &chrome });
 	//    scene.spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
 
-	float w = 1.0, front = 1.0, back = -1.0, h = 1.0, y = -0.01f;
-	scene.triangles.push_back(make_triangle({ -w, y, back }, { -w, y, front }, { w, y, back }, &copper));
-	scene.triangles.push_back(make_triangle({ w, y, back }, { -w, y, front }, { w, y, front }, &copper));
-	//    scene.triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
-	//    scene.triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
-	//    scene.triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
-	//    scene.triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
-	readModel(scene, "2009210107_3.obj", 0.5, &chrome);
+	float w = 1.0, front = 2.0, back = -2.0, h = 2.0, y = -0.01f;
+	addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
+	addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &wall2); // center
+	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall2); // left
+	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall2); // right
+	readModel(scene, "2009210107_3.obj", 1.0, &glass);
 
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
 	scene.camera.fovy = 60;
 	scene.bgColor = { 0.0, 0.0, 0.0 };
-	//scene.lights.push_back({ LT_POINT, { 0.0, 5.0, 0.0 }, 1.0, { 1.0, 0.0, 0.0 } });
+	scene.lights.push_back({ LT_POINT, { 0.0, 0.5, 0.0 }, 1.0, { 1.0, 1.0, 1.0 } });
 	//    scene.lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
 	//    scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
+	//scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	scene.lights.push_back({ LT_SPOT, { 0.0, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.0, 0.0, -1.0 })) });
+	scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
 }
 
 #ifndef IDC_STATIC
@@ -291,15 +349,15 @@ int CALLBACK WinMain(
 	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("1280"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
 	HWND hCtrl0_3 = CreateWindowEx(0, WC_STATIC, TEXT("x"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 182, 190, 6, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_4 = CreateWindowEx(0, WC_STATIC, TEXT("Resolution"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 187, 70, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
 	HWND hCtrl0_7 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Position"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 16, 78, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_8 = CreateWindowEx(0, WC_STATIC, TEXT("X:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_9 = CreateWindowEx(0, WC_BUTTON, TEXT("Preview"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | 0x00000001, 8, 280, 128, 23, hwnd, (HMENU)ID_PREVIEW, hInst, 0);
 	HWND hCtrl0_10 = CreateWindowEx(0, WC_BUTTON, TEXT("Use Octree"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | 0x00000003, 8, 247, 100, 13, hwnd, (HMENU)ID_OCTREE, hInst, 0);
 	HWND hCtrl0_11 = CreateWindowEx(0, WC_STATIC, TEXT("Y:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 105, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_12 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
+	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
 	HWND hCtrl0_13 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSY, hInst, 0);
-	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
+	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
 	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("720"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
 	HWND hCtrl0_16 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 215, 75, 21, hwnd, (HMENU)ID_NRAYBOUNCE, hInst, 0);
 	HWND hCtrl0_17 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Look At"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 73, 78, 15, hwnd, (HMENU)0, hInst, 0);
