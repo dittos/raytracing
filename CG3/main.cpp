@@ -154,8 +154,59 @@ static void setupScene(Scene &scene) {
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
 	//scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
+	scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, (float)cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
 }
+
+Scene scene;
+unsigned int *pixels;
+RenderParams params;
+
+int main(int argc, char **argv) {
+	{
+		// XXX
+		setupScene(scene);
+
+		int w = 640;
+		int h = 360;
+		delete pixels;
+		pixels = new unsigned int[w * h];
+		scene.camera.aspect = (float)w / h;
+		scene.camera.position = { 0.0, 0.5, 1.5 };
+		scene.camera.at = { 0, 0.3, 0 };
+		scene.camera.up = { 0, 1, 0 };
+		params.width = w;
+		params.height = h;
+		params.enableOctree = true;
+		params.depthLimit = 4;
+		params.threads = 4;
+		destroyOctree(scene);
+		if (params.enableOctree)
+			buildOctree(scene);
+		unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
+		char filename[20];
+
+		scene.camera.position = glm::rotateY(scene.camera.position, 30.0f * 3.14159265358979323846f / 180.0f);
+		for (int i = 30; i < 180; i++) {
+			std::cout << "rendering frame #" << i << std::endl;
+			render(scene, pixels, params);
+			int p = 0;
+			for (int y = h - 1; y >= 0; y--) {
+				for (int x = 0; x < w; x++) {
+				    unsigned int c = pixels[y * w + x];
+				    bytedata[p++] = (c & 0xFF0000) >> 16; // r
+				    bytedata[p++] = (c & 0x00FF00) >> 8; // g
+				    bytedata[p++] = (c & 0x0000FF); // b
+				}
+			}
+			sprintf(filename, "frame%04d.png", i);
+			stbi_write_png(filename, w, h, 3, bytedata, 0);
+			scene.camera.position = glm::rotateY(scene.camera.position, 1.0f * 3.14159265358979323846f / 180.0f);
+		}
+	}
+	return 0;
+}
+
+#ifdef WIN32
 
 #ifndef IDC_STATIC
 #define IDC_STATIC (-1)
@@ -179,9 +230,6 @@ static void setupScene(Scene &scene) {
 #define ID_PREVIEW                              40015
 
 HWND ctrlWnd, renderWnd;
-Scene scene;
-unsigned int *pixels;
-RenderParams params;
 BITMAPINFO bitmapInfo;
 time_t renderStartTime;
 
@@ -310,50 +358,7 @@ LRESULT CALLBACK WndProc2(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-int main(int argc, char **argv) {
-	{
-		// XXX
-		setupScene(scene);
-
-		int w = 640;
-		int h = 360;
-		delete pixels;
-		pixels = new unsigned int[w * h];
-		scene.camera.aspect = (float)w / h;
-		scene.camera.position = { 0.0, 0.5, 1.5 };
-		scene.camera.at = { 0, 0.3, 0 };
-		scene.camera.up = { 0, 1, 0 };
-		params.width = w;
-		params.height = h;
-		params.enableOctree = true;
-		params.depthLimit = 4;
-		params.threads = 4;
-		destroyOctree(scene);
-		if (params.enableOctree)
-			buildOctree(scene);
-		unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
-		char filename[20];
-
-		scene.camera.position = glm::rotateY(scene.camera.position, 30.0f * 3.14159265358979323846f / 180.0f);
-		for (int i = 30; i < 180; i++) {
-			std::cout << "rendering frame #" << i << std::endl;
-			render(scene, pixels, params);
-			int p = 0;
-			for (int y = h - 1; y >= 0; y--) {
-				for (int x = 0; x < w; x++) {
-				    unsigned int c = pixels[y * w + x];
-				    bytedata[p++] = (c & 0xFF0000) >> 16; // r
-				    bytedata[p++] = (c & 0x00FF00) >> 8; // g
-				    bytedata[p++] = (c & 0x0000FF); // b
-				}
-			}
-			sprintf(filename, "frame%04d.png", i);
-			stbi_write_png(filename, w, h, 3, bytedata, 0);
-			scene.camera.position = glm::rotateY(scene.camera.position, 1.0f * 3.14159265358979323846f / 180.0f);
-		}
-	}
-	return 0;
-
+static void guiMain() {
 	HINSTANCE hInst = GetModuleHandle(0);
 	WNDCLASSEX wcex;
 	ZeroMemory(&wcex, sizeof wcex);
@@ -429,3 +434,5 @@ int main(int argc, char **argv) {
 
 	return (int)msg.wParam;
 }
+
+#endif
