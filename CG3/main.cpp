@@ -9,6 +9,7 @@
 #include <fstream>
 #include <future>
 #include "glm/geometric.hpp"
+#include "glm/gtx/rotate_vector.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "renderer.h"
@@ -125,9 +126,9 @@ static void addPlane(Scene &scene, Vec3 lefttop, glm::vec2 uv0, Vec3 leftbottom,
 
 static void setupScene(Scene &scene) {
 	checker.texFunc = checkerTexture;
-	wall1.texFunc = [](glm::vec2 texCoord) { return Color(1, texCoord.y, 0); };
-	wall2.texFunc = [](glm::vec2 texCoord) { return Color(0, texCoord.y, 1); };
-	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y, 0, 1); };
+	wall1.texFunc = [](glm::vec2 texCoord) { return Color(1, texCoord.y*texCoord.y, 0); };
+	wall2.texFunc = [](glm::vec2 texCoord) { return Color(0, texCoord.y*texCoord.y, 1); };
+	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y*texCoord.y, 0, 1); };
 	glass.refract = true;
 	glass.refraction = 1.3f;
 	glass.refractionFactor = 1.0f;
@@ -136,11 +137,11 @@ static void setupScene(Scene &scene) {
 	scene.spheres.push_back({ { 0.25, 0.1, 0.0 }, 0.1, &chrome });
 	//    scene.spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
 
-	float w = 1.0, front = 2.0, back = -2.0, h = 2.0, y = -0.01f;
+	float w = 5.0, front = 2.0, back = -2.0, h = 5.0, y = -0.01f;
 	addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
 	addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &wall2); // center
-	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall2); // left
-	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall2); // right
+	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall1); // left
+	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall3); // right
 	readModel(scene, "2009210107_3.obj", 1.0, &glass);
 
 	scene.camera.zNear = 0.01;
@@ -309,11 +310,50 @@ LRESULT CALLBACK WndProc2(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-int CALLBACK WinMain(
-	HINSTANCE hInstance,
-	HINSTANCE hPrevInstance,
-	LPSTR     lpCmdLine,
-	int       nCmdShow) {
+int main(int argc, char **argv) {
+	{
+		// XXX
+		setupScene(scene);
+
+		int w = 640;
+		int h = 360;
+		delete pixels;
+		pixels = new unsigned int[w * h];
+		scene.camera.aspect = (float)w / h;
+		scene.camera.position = { 0.0, 0.5, 1.5 };
+		scene.camera.at = { 0, 0.3, 0 };
+		scene.camera.up = { 0, 1, 0 };
+		params.width = w;
+		params.height = h;
+		params.enableOctree = true;
+		params.depthLimit = 4;
+		params.threads = 4;
+		destroyOctree(scene);
+		if (params.enableOctree)
+			buildOctree(scene);
+		unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
+		char filename[20];
+
+		scene.camera.position = glm::rotateY(scene.camera.position, 30.0f * 3.14159265358979323846f / 180.0f);
+		for (int i = 30; i < 180; i++) {
+			std::cout << "rendering frame #" << i << std::endl;
+			render(scene, pixels, params);
+			int p = 0;
+			for (int y = h - 1; y >= 0; y--) {
+				for (int x = 0; x < w; x++) {
+				    unsigned int c = pixels[y * w + x];
+				    bytedata[p++] = (c & 0xFF0000) >> 16; // r
+				    bytedata[p++] = (c & 0x00FF00) >> 8; // g
+				    bytedata[p++] = (c & 0x0000FF); // b
+				}
+			}
+			sprintf(filename, "frame%04d.png", i);
+			stbi_write_png(filename, w, h, 3, bytedata, 0);
+			scene.camera.position = glm::rotateY(scene.camera.position, 1.0f * 3.14159265358979323846f / 180.0f);
+		}
+	}
+	return 0;
+
 	HINSTANCE hInst = GetModuleHandle(0);
 	WNDCLASSEX wcex;
 	ZeroMemory(&wcex, sizeof wcex);
