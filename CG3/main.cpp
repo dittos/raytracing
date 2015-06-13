@@ -71,29 +71,29 @@ static void setupScene(Scene &scene) {
 	glass.refract = true;
 	glass.refraction = 1.3f;
 	glass.refractionFactor = 1.0f;
-	//scene.spheres.push_back({{-0.02, 0.2, 0.55}, 0.02, &glass});
+	scene.spheres.push_back({{0.2, 0.2, 0.0}, 0.02, &glass});
 	//    scene.spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
 	scene.spheres.push_back({ { 0.25, 0.1, 0.0 }, 0.1, &chrome });
 	//    scene.spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
 
 	float w = 1.0, front = 1.0, back = -1.0, h = 1.0, y = -0.01f;
-	scene.triangles.push_back(make_triangle({ -w, y, back }, { -w, y, front }, { w, y, back }, &chrome));
-	scene.triangles.push_back(make_triangle({ w, y, back }, { -w, y, front }, { w, y, front }, &chrome));
+	scene.triangles.push_back(make_triangle({ -w, y, back }, { -w, y, front }, { w, y, back }, &copper));
+	scene.triangles.push_back(make_triangle({ w, y, back }, { -w, y, front }, { w, y, front }, &copper));
 	//    scene.triangles.push_back(make_triangle({-w, h, back}, {-w, 0, back}, {w, 0, back}, &copper));
 	//    scene.triangles.push_back(make_triangle({w, h, back}, {-w, h, back}, {w, 0, back}, &copper));
 	//    scene.triangles.push_back(make_triangle({-w, h, back}, {-w, 0, front}, {-w, 0, back}, &copper));
 	//    scene.triangles.push_back(make_triangle({-w, h, front}, {-w, 0, front}, {-w, h, back}, &copper));
-	    readModel(scene, "2009210107_3.obj", 0.5, &copper);
+	readModel(scene, "2009210107_3.obj", 0.5, &chrome);
 
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
 	scene.camera.fovy = 60;
 	scene.bgColor = { 0.0, 0.0, 0.0 };
-	scene.lights.push_back({ LT_POINT, { 0.0, 5.0, 0.0 }, 1.0, { 1.0, 0.0, 0.0 } });
+	//scene.lights.push_back({ LT_POINT, { 0.0, 5.0, 0.0 }, 1.0, { 1.0, 0.0, 0.0 } });
 	//    scene.lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
 	//    scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 0.0 } });
+	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
 }
 
@@ -287,7 +287,7 @@ int CALLBACK WinMain(
 	HWND hwnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass0"), TEXT("2009210107_Term"), WS_CAPTION | WS_VISIBLE | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 300, 380, 0, 0, hInst, 0);
 	HWND hCtrl0_0 = CreateWindowEx(0, WC_STATIC, TEXT("Status: Ready"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 312, 263, 20, hwnd, (HMENU)ID_STATUS, hInst, 0);
 	HWND hCtrl0_1 = CreateWindowEx(0, WC_STATIC, TEXT("Ray bounce"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 216, 100, 15, hwnd, (HMENU)0, hInst, 0);
-	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("640"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
+	HWND hCtrl0_2 = CreateWindowEx(0, WC_EDIT, TEXT("1280"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 187, 75, 21, hwnd, (HMENU)ID_RESW, hInst, 0);
 	HWND hCtrl0_3 = CreateWindowEx(0, WC_STATIC, TEXT("x"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 182, 190, 6, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_4 = CreateWindowEx(0, WC_STATIC, TEXT("Resolution"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 187, 70, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
@@ -299,7 +299,7 @@ int CALLBACK WinMain(
 	HWND hCtrl0_12 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_13 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSY, hInst, 0);
 	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
-	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("360"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
+	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("720"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
 	HWND hCtrl0_16 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 215, 75, 21, hwnd, (HMENU)ID_NRAYBOUNCE, hInst, 0);
 	HWND hCtrl0_17 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Look At"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 73, 78, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_19 = CreateWindowEx(0, WC_STATIC, TEXT("X:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);

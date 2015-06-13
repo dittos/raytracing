@@ -7,6 +7,15 @@
 const int OCTREE_DEPTH = 7;
 const int OCTREE_MAX_OBJ = 100;
 
+struct Ray {
+	Vec3 from;
+	Vec3 dir;
+	Vec3 inv_dir;
+
+public:
+	Ray(Vec3 from_, Vec3 dir_) : from(from_), dir(dir_), inv_dir({ 1.0f / dir_.x, 1.0f / dir_.y, 1.0f / dir_.z }) { }
+};
+
 static BoundingBox extend(const BoundingBox &bbox, float d) {
 	BoundingBox e = {
 			{ bbox.min.x - d, bbox.min.y - d, bbox.min.z - d },
@@ -28,7 +37,7 @@ static BoundingBox get_bbox(const Triangle &obj) {
 				std::max({ obj.vertex[0].z, obj.vertex[1].z, obj.vertex[2].z })
 			}
 	};
-	return extend(b, 1e-2f);
+	return b;
 }
 
 static bool overlaps(const BoundingBox &bbox, const BoundingBox &b) {
@@ -46,20 +55,21 @@ static void splitOctreeNode(const Scene &scene, OctreeNode *node, int depth) {
 	node->leaf = false;
 	BoundingBox b = node->bounds;
 	Vec3 center = (b.min + b.max) / 2.0f;
+	float e = std::numeric_limits<float>().epsilon();
 	BoundingBox bboxes[8] = {
-			{ b.min, center },
-			{ { center.x, b.min.y, b.min.z }, { b.max.x, center.y, center.z } },
-			{ { center.x, b.min.y, center.z }, { b.max.x, center.y, b.max.z } },
-			{ { b.min.x, b.min.y, center.z }, { center.x, center.y, b.max.z } },
-			{ { b.min.x, center.y, b.min.z }, { center.x, b.max.y, center.z } },
-			{ { center.x, center.y, b.min.z }, { b.max.x, b.max.y, center.z } },
-			{ center, b.max },
-			{ { b.min.x, center.y, center.z }, { center.x, b.max.y, b.max.z } }
+			{ b.min, { center.x + e, center.y + e, center.z + e } },
+			{ { center.x - e, b.min.y, b.min.z }, { b.max.x, center.y + e, center.z + e } },
+			{ { center.x - e, b.min.y, center.z - e }, { b.max.x, center.y + e, b.max.z } },
+			{ { b.min.x, b.min.y, center.z - e }, { center.x + e, center.y + e, b.max.z } },
+			{ { b.min.x, center.y - e, b.min.z }, { center.x + e, b.max.y, center.z + e } },
+			{ { center.x - e, center.y - e, b.min.z }, { b.max.x, b.max.y, center.z + e } },
+			{ { center.x - e, center.y - e, center.z - e }, b.max },
+			{ { b.min.x, center.y - e, center.z - e }, { center.x + e, b.max.y, b.max.z } }
 	};
 	for (int j = 0; j < 8; j++) {
 		OctreeNode *subnode = new OctreeNode;
 		subnode->leaf = true;
-		subnode->bounds = extend(bboxes[j], 1e-2f);
+		subnode->bounds = bboxes[j];
 		int n = 0;
 		for (int i : node->objects) {
 			if (overlaps(subnode->bounds, get_bbox(scene.triangles[i]))) {
@@ -72,7 +82,7 @@ static void splitOctreeNode(const Scene &scene, OctreeNode *node, int depth) {
 			delete subnode;
 			subnode = nullptr;
 		}
-		else if (depth >= OCTREE_DEPTH) {
+		else if (depth == OCTREE_DEPTH) {
 			stat_overDepth++;
 		}
 		else if (n < OCTREE_MAX_OBJ) {
@@ -114,78 +124,33 @@ void destroyOctree(Scene &scene) {
 	deleteNode(&scene.octreeRoot);
 }
 
-static bool intersectRayPlane(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &planeNormal, float planeD, Vec3 &p) {
-	float d = glm::dot(normalizedRayDir, planeNormal);
-	if (d != 0) {
-		float t = -(glm::dot(rayFrom, planeNormal) - planeD) / d;
-		if (t < 0) return false;
-		p = rayFrom + normalizedRayDir * t;
-		return true;
-	}
-	else if (glm::dot(rayFrom, planeNormal) == planeD) {
-		p = rayFrom;
-		return true;
-	}
-	return false;
+static bool intersectBboxRay(const BoundingBox &bbox, const Ray &ray) {
+	Vec3 a = (bbox.min - ray.from) * ray.inv_dir;
+	Vec3 b = (bbox.max - ray.from) * ray.inv_dir;
+
+	float tmin = std::max(std::max(std::min(a[0], b[0]), std::min(a[1], b[1])), std::min(a[2], b[2]));
+	float tmax = std::min(std::min(std::max(a[0], b[0]), std::max(a[1], b[1])), std::max(a[2], b[2]));
+
+	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
+	if (tmax < 0)
+		return false;
+
+	// if tmin > tmax, ray doesn't intersect AABB
+	if (tmin > tmax)
+		return false;
+
+	return true;
 }
 
-static bool intersectBboxRay(const BoundingBox &bbox, const Vec3 &rayFrom, const Vec3 &normalizedRayDir) {
-	if (bbox.min.x < rayFrom.x && rayFrom.x < bbox.max.x &&
-		bbox.min.y < rayFrom.y && rayFrom.y < bbox.max.y &&
-		bbox.min.z < rayFrom.z && rayFrom.z < bbox.max.z)
-		// bbox contains rayFrom
-		return true;
-
-	Vec3 p;
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 0, 0, 1 }), bbox.min.z, p)
-		&& (p.x > bbox.min.x) && (p.x < bbox.max.x)
-		&& (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
-		return true;
-	}
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 0, 0, 1 }), bbox.max.z, p)
-		&& (p.x > bbox.min.x) && (p.x < bbox.max.x)
-		&& (p.y > bbox.min.y) && (p.y < bbox.max.y)) {
-		return true;
-	}
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 0, 1, 0 }), bbox.min.y, p)
-		&& (p.x > bbox.min.x) && (p.x < bbox.max.x)
-		&& (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
-		return true;
-	}
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 0, 1, 0 }), bbox.max.y, p)
-		&& (p.x > bbox.min.x) && (p.x < bbox.max.x)
-		&& (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
-		return true;
-	}
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 1, 0, 0 }), bbox.min.z, p)
-		&& (p.y > bbox.min.y) && (p.y < bbox.max.y)
-		&& (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
-		return true;
-	}
-
-	if (intersectRayPlane(rayFrom, normalizedRayDir, Vec3({ 1, 0, 0 }), bbox.max.z, p)
-		&& (p.y > bbox.min.y) && (p.y < bbox.max.y)
-		&& (p.z > bbox.min.z) && (p.z < bbox.max.z)) {
-		return true;
-	}
-
-	return false;
-}
-
-static bool findNode(const Scene &scene, const OctreeNode *node, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const int excludeId, int &nearestId, float &nearestDist) {
+static bool findNode(const Scene &scene, const OctreeNode *node, const Ray &ray, const int excludeId, int &nearestId, float &nearestDist) {
 	bool found = false;
 	if (!node->leaf) {
 		for (OctreeNode *subnode : node->subnodes) {
 			// Early pruning!
-			if (subnode == nullptr || !intersectBboxRay(subnode->bounds, rayFrom, normalizedRayDir))
+			if (subnode == nullptr || !intersectBboxRay(subnode->bounds, ray))
 				continue;
 
-			if (findNode(scene, subnode, rayFrom, normalizedRayDir, excludeId, nearestId, nearestDist))
+			if (findNode(scene, subnode, ray, excludeId, nearestId, nearestDist))
 				found = true;
 		}
 	}
@@ -194,7 +159,7 @@ static bool findNode(const Scene &scene, const OctreeNode *node, const Vec3 &ray
 		for (int i : node->objects) {
 			if (i == excludeId) continue;
 			const Triangle &obj = scene.triangles[i];
-			if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
+			if (glm::intersectRayTriangle(ray.from, ray.dir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
 				if (baryPos.z < nearestDist) {
 					found = true;
 					nearestDist = baryPos.z;
@@ -206,11 +171,11 @@ static bool findNode(const Scene &scene, const OctreeNode *node, const Vec3 &ray
 	return found;
 }
 
-static bool intersectRaySphere(const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const Vec3 &center, float radius, float &distance) {
-	float len = glm::dot(normalizedRayDir, center - rayFrom);
+static bool intersectRaySphere(const Ray &ray, const Vec3 &center, float radius, float &distance) {
+	float len = glm::dot(ray.dir, center - ray.from);
 	if (len < 0.f) // behind the ray
 		return false;
-	Vec3 d = center - (rayFrom + normalizedRayDir * len);
+	Vec3 d = center - (ray.from + ray.dir * len);
 	float dst2 = glm::dot(d, d);
 	float r2 = radius * radius;
 	if (dst2 > r2) return false;
@@ -218,9 +183,8 @@ static bool intersectRaySphere(const Vec3 &rayFrom, const Vec3 &normalizedRayDir
 	return true;
 }
 
-static bool findNearestObject(const Scene &scene, const RenderParams &params, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
+static bool _findNearestObject(const Scene &scene, const RenderParams &params, const Ray &ray, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, float &nearestDist, bool &isInside) {
 	bool found = false;
-	float nearestDist = std::numeric_limits<float>::max();
 	for (int i = 0; i < scene.spheres.size(); i++) {
 		if (excludeObjectID.type == SPHERE && i == excludeObjectID.index)
 			continue;
@@ -228,26 +192,20 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 		if (excludeTransparentMat && obj.material->refract)
 			continue;
 		float distance;
-		if (intersectRaySphere(rayFrom, normalizedRayDir, obj.center, obj.radius, distance)) {
+		if (intersectRaySphere(ray, obj.center, obj.radius, distance)) {
 			if (distance < nearestDist) {
 				found = true;
 				nearestDist = distance;
 				nearestObjectID.type = SPHERE;
 				nearestObjectID.index = i;
-				nearestPos = rayFrom + normalizedRayDir * distance;
-				nearestNorm = (nearestPos - obj.center) / obj.radius;
-				*nearestMat = obj.material;
-				isInside = glm::distance(rayFrom, obj.center) < obj.radius;
+				isInside = glm::distance(ray.from, obj.center) < obj.radius;
 			}
 		}
 	}
 	if (params.enableOctree) {
-		if (findNode(scene, &scene.octreeRoot, rayFrom, normalizedRayDir, excludeObjectID.type == TRIANGLE ? excludeObjectID.index : -1, nearestObjectID.index, nearestDist)) {
+		if (findNode(scene, &scene.octreeRoot, ray, excludeObjectID.type == TRIANGLE ? excludeObjectID.index : -1, nearestObjectID.index, nearestDist)) {
 			found = true;
 			nearestObjectID.type = TRIANGLE;
-			nearestPos = rayFrom + normalizedRayDir * nearestDist;
-			nearestNorm = scene.triangles[nearestObjectID.index].norm;
-			*nearestMat = scene.triangles[nearestObjectID.index].material;
 			isInside = false;
 		}
 	}
@@ -259,7 +217,7 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 			if (excludeTransparentMat && obj.material->refract)
 				continue;
 			Vec3 baryPos;
-			if (glm::intersectRayTriangle(rayFrom, normalizedRayDir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
+			if (glm::intersectRayTriangle(ray.from, ray.dir, obj.vertex[0], obj.vertex[1], obj.vertex[2], baryPos)) {
 				// See https://github.com/g-truc/glm/issues/6
 				float distance = baryPos.z;
 				if (distance < nearestDist) {
@@ -267,9 +225,6 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 					nearestDist = distance;
 					nearestObjectID.type = TRIANGLE;
 					nearestObjectID.index = i;
-					nearestPos = rayFrom + normalizedRayDir * distance;
-					nearestNorm = obj.norm;
-					*nearestMat = obj.material;
 					isInside = false;
 				}
 			}
@@ -278,25 +233,45 @@ static bool findNearestObject(const Scene &scene, const RenderParams &params, co
 	return found;
 }
 
-bool isShaded(const Scene &scene, const RenderParams &params, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, const ObjectId &excludeObjectID) {
-	ObjectId a;
-	Vec3 b, c;
-	Material *m;
-	bool isInside;
-	return findNearestObject(scene, params, rayFrom, normalizedRayDir, excludeObjectID, true, a, b, c, &m, isInside);
+static bool findNearestObject(const Scene &scene, const RenderParams &params, const Ray &ray, const ObjectId excludeObjectID, bool excludeTransparentMat, ObjectId &nearestObjectID, Vec3 &nearestPos, Vec3 &nearestNorm, Material **nearestMat, bool &isInside) {
+	float nearestDist = std::numeric_limits<float>::max();
+	if (_findNearestObject(scene, params, ray, excludeObjectID, excludeTransparentMat, nearestObjectID, nearestDist, isInside)) {
+		if (nearestObjectID.type == SPHERE) {
+			const Sphere &obj = scene.spheres[nearestObjectID.index];
+			nearestPos = ray.from + ray.dir * nearestDist;
+			nearestNorm = (nearestPos - obj.center) / obj.radius;
+			*nearestMat = obj.material;
+		}
+		else if (nearestObjectID.type == TRIANGLE) {
+			const Triangle &obj = scene.triangles[nearestObjectID.index];
+			nearestPos = ray.from + ray.dir * nearestDist;
+			nearestNorm = obj.norm;
+			*nearestMat = obj.material;
+			isInside = false;
+		}
+		return true;
+	}
+	return false;
 }
 
-Color _renderPixel(const Scene &scene, const RenderParams &params, const Vec3 &rayFrom, const Vec3 &normalizedRayDir, ObjectId prevObjectID, int depth, float rIndex) {
+bool isShaded(const Scene &scene, const RenderParams &params, const Ray &ray, const ObjectId &excludeObjectID) {
+	ObjectId a;
+	float d;
+	bool isInside;
+	return _findNearestObject(scene, params, ray, excludeObjectID, true, a, d, isInside);
+}
+
+Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ray, ObjectId prevObjectID, int depth, float rIndex) {
 	ObjectId objectID;
 	Vec3 pos, norm;
 	Material *m;
 	bool isInside = false;
-	if (!findNearestObject(scene, params, rayFrom, normalizedRayDir, prevObjectID, false, objectID, pos, norm, &m, isInside)) {
+	if (!findNearestObject(scene, params, ray, prevObjectID, false, objectID, pos, norm, &m, isInside)) {
 		return scene.bgColor;
 	}
 
 	Color c = scene.bgColor * m->ambientFactor;
-	Vec3 reflectionDir = glm::normalize(glm::reflect(normalizedRayDir, norm));
+	Vec3 reflectionDir = glm::normalize(glm::reflect(ray.dir, norm));
 	if (!m->refract) {
 		for (const Light &light : scene.lights) {
 			Vec3 lightDir;
@@ -308,13 +283,13 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Vec3 &r
 			}
 
 			float s = glm::dot(norm, lightDir);
-			if (s > 0.0f && !isShaded(scene, params, pos, lightDir, objectID)) {
+			if (s > 0.0f && !isShaded(scene, params, { pos, lightDir }, objectID)) {
 				Color diffuse(s * light.intensity);
 				c += diffuse * light.color * m->diffuseFactor;
 			}
 
 			float t = glm::dot(lightDir, reflectionDir);
-			if (t > 0.0f && !isShaded(scene, params, pos, reflectionDir, objectID)) {
+			if (t > 0.0f && !isShaded(scene, params, { pos, reflectionDir }, objectID)) {
 				Color specular = Color(powf(t, m->shininess) * light.intensity);
 				c += specular * light.color * m->specularFactor;
 			}
@@ -322,18 +297,18 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Vec3 &r
 	}
 
 	if (depth < params.depthLimit) {
-		c += _renderPixel(scene, params, pos, reflectionDir, objectID, depth + 1, rIndex) * m->reflectionFactor;
+		c += _renderPixel(scene, params, { pos, reflectionDir }, objectID, depth + 1, rIndex) * m->reflectionFactor;
 		if (m->refract) {
 			float n = rIndex / m->refraction;
 			Vec3 N = norm;
 			if (isInside)
 				N *= -1;
-			float cosI = -glm::dot(N, normalizedRayDir);
+			float cosI = -glm::dot(N, ray.dir);
 			float cosT2 = 1.0f - n * n * (1.0f - cosI * cosI);
 			if (cosT2 > 0.0f) {
-				Vec3 refractionDir = n * normalizedRayDir + (n * cosI - sqrtf(cosT2)) * N;
+				Vec3 refractionDir = n * ray.dir + (n * cosI - sqrtf(cosT2)) * N;
 				// For refraction we don't exclude current object
-				c += _renderPixel(scene, params, pos + refractionDir * 1e-5f, refractionDir, {}, depth + 1, m->refraction) * m->refractionFactor;
+				c += _renderPixel(scene, params, { pos + refractionDir * 1e-5f, refractionDir }, {}, depth + 1, m->refraction) * m->refractionFactor;
 			}
 		}
 	}
@@ -346,7 +321,7 @@ static void _render(const Scene &scene, unsigned int *pixels, const RenderParams
 		for (int x = 0; x < params.width; x++) {
 			Vec3 win = { x, y, 0 };
 			Vec3 p = glm::unProject(win, model, proj, viewport);
-			Color c = _renderPixel(scene, params, scene.camera.position, glm::normalize(p - scene.camera.position), {}, 0, 1.0f);
+			Color c = _renderPixel(scene, params, { scene.camera.position, glm::normalize(p - scene.camera.position) }, {}, 0, 1.0f);
 			pixels[y * params.width + x] = ((unsigned int)(255 * c.r) & 0xFF) << 16 | ((unsigned int)(255 * c.g) & 0xFF) << 8 | ((unsigned int)(255 * c.b) & 0xFF);
 		}
 	}
