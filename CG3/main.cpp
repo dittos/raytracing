@@ -95,6 +95,7 @@ static void setupScene(Scene &scene) {
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
 	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
+	scene.lights.push_back({ LT_SPOT, { 0.0, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.0, 0.0, -1.0 })) });
 }
 
 #ifndef IDC_STATIC

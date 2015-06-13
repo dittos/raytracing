@@ -52,7 +52,8 @@ struct Camera {
 
 enum LightType {
 	LT_POINT,
-	LT_DIRECTIONAL
+	LT_DIRECTIONAL,
+	LT_SPOT
 };
 
 struct Light {
@@ -60,6 +61,8 @@ struct Light {
 	Vec3 position;
 	float intensity;
 	Color color;
+	float spotCutoff;
+	Vec3 spotDir;
 };
 
 struct BoundingBox {

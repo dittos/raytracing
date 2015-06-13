@@ -281,6 +281,11 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 			else if (light.type == LT_DIRECTIONAL) {
 				lightDir = -light.position;
 			}
+			else if (light.type == LT_SPOT) {
+				lightDir = glm::normalize(light.position - pos);
+				if (glm::dot(-lightDir, light.spotDir) < light.spotCutoff)
+					continue;
+			}
 
 			float s = glm::dot(norm, lightDir);
 			if (s > 0.0f && !isShaded(scene, params, { pos, lightDir }, objectID)) {
