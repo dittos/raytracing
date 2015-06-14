@@ -12,6 +12,8 @@
 #include "glm/gtx/rotate_vector.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 #include "renderer.h"
 
 static Triangle make_triangle(Vec3 v0, Vec3 v1, Vec3 v2, Material *material) {
@@ -139,10 +141,12 @@ static void setupScene(Scene &scene) {
 
 	float w = 5.0, front = 2.0, back = -2.0, h = 5.0, y = -0.01f;
 	addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
+    /*
 	addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &wall2); // center
 	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall1); // left
 	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall3); // right
-	readModel(scene, "2009210107_3.obj", 1.0, &glass);
+    */
+	//readModel(scene, "2009210107_3.obj", 1.0, &glass);
 
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
@@ -152,9 +156,9 @@ static void setupScene(Scene &scene) {
 	//    scene.lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
 	//    scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-	//scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
+	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ 0, 0, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
 	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, (float)cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
+	//scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, (float)cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
 }
 
 Scene scene;
@@ -162,47 +166,57 @@ unsigned int *pixels;
 RenderParams params;
 
 int main(int argc, char **argv) {
-	{
-		// XXX
-		setupScene(scene);
+    // ffmpeg -framerate 30 -i frame%04d.png -i ../scripts/sound.wav -c:v libx264 -c:a aac -strict experimental -b:a 192k -shortest -r 30 -pix_fmt yuv420p out.mp4
+    int x, y, n;
+    unsigned char *data = stbi_load("../scripts/spectrogram.png", &x, &y, &n, 0);
 
-		int w = 640;
-		int h = 360;
-		delete pixels;
-		pixels = new unsigned int[w * h];
-		scene.camera.aspect = (float)w / h;
-		scene.camera.position = { 0.0, 0.5, 1.5 };
-		scene.camera.at = { 0, 0.3, 0 };
-		scene.camera.up = { 0, 1, 0 };
-		params.width = w;
-		params.height = h;
-		params.enableOctree = true;
-		params.depthLimit = 4;
-		params.threads = 4;
-		destroyOctree(scene);
-		if (params.enableOctree)
-			buildOctree(scene);
-		unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
-		char filename[20];
+    setupScene(scene);
 
-		scene.camera.position = glm::rotateY(scene.camera.position, 30.0f * 3.14159265358979323846f / 180.0f);
-		for (int i = 30; i < 180; i++) {
-			std::cout << "rendering frame #" << i << std::endl;
-			render(scene, pixels, params);
-			int p = 0;
-			for (int y = h - 1; y >= 0; y--) {
-				for (int x = 0; x < w; x++) {
-				    unsigned int c = pixels[y * w + x];
-				    bytedata[p++] = (c & 0xFF0000) >> 16; // r
-				    bytedata[p++] = (c & 0x00FF00) >> 8; // g
-				    bytedata[p++] = (c & 0x0000FF); // b
-				}
-			}
-			sprintf(filename, "frame%04d.png", i);
-			stbi_write_png(filename, w, h, 3, bytedata, 0);
-			scene.camera.position = glm::rotateY(scene.camera.position, 1.0f * 3.14159265358979323846f / 180.0f);
-		}
-	}
+    int w = 320;
+    int h = 180;
+    delete pixels;
+    pixels = new unsigned int[w * h];
+    scene.camera.aspect = (float)w / h;
+    scene.camera.position = { 0.0, 0.5, 1.5 };
+    scene.camera.at = { 0, 0.3, 0 };
+    scene.camera.up = { 0, 1, 0 };
+    params.width = w;
+    params.height = h;
+    params.enableOctree = true;
+    params.depthLimit = 0;
+    params.threads = 8;
+    destroyOctree(scene);
+    if (params.enableOctree)
+        buildOctree(scene);
+    unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
+    char filename[20];
+
+    scene.camera.position = glm::rotateY(scene.camera.position, -20.0f * 3.14159265358979323846f / 180.0f);
+    const int fps = 30, seconds = 10;
+    for (int i = 0; i < fps * seconds; i++) {
+        std::cout << "rendering frame #" << i << std::endl;
+        scene.spheres.clear();
+        int sum = 0;
+        for (int j = y/2 - 1; j >= 0; j--) {
+            int s = data[(j * x + i) * 3];
+            sum += s;
+            scene.spheres.push_back({ {0.03 * (y/2 - j - y/4), 0.02 + (s / 255.0), 0}, 0.02, &chrome });
+        }
+        scene.lights[0].intensity = 2.0f * (float)sum / (255 * y/2);
+        render(scene, pixels, params);
+        int p = 0;
+        for (int y = h - 1; y >= 0; y--) {
+            for (int x = 0; x < w; x++) {
+                unsigned int c = pixels[y * w + x];
+                bytedata[p++] = (c & 0xFF0000) >> 16; // r
+                bytedata[p++] = (c & 0x00FF00) >> 8; // g
+                bytedata[p++] = (c & 0x0000FF); // b
+            }
+        }
+        sprintf(filename, "frame%04d.png", i);
+        stbi_write_png(filename, w, h, 3, bytedata, 0);
+        scene.camera.position = glm::rotateY(scene.camera.position, 0.1f * 3.14159265358979323846f / 180.0f);
+    }
 	return 0;
 }
 
