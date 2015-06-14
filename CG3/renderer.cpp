@@ -337,7 +337,9 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 
 static void _render(const Scene &scene, unsigned int *pixels, const RenderParams &params, int threadid, const Mat4 &proj, const glm::vec4 &viewport) {
 	Mat4 model;
-	for (int y = threadid; y < params.height; y += params.threads) {
+	int part = params.height / params.threads;
+	for (int i = 0; i < part; i++) {
+		int y = part * threadid + i;
 		for (int x = 0; x < params.width; x++) {
 			Vec3 win = { x, y, 0 };
 			Vec3 p = glm::unProject(win, model, proj, viewport);

@@ -63,6 +63,7 @@ static void readModel(Scene &scene, std::string path, float scaleFactor, glm::ma
 
 	std::cout << "vertex: " << vs.size() << std::endl;
 }
+
 Material copper = { { 0.329412, 0.223529, 0.027451 },
 { 0.780392, 0.568627, 0.113725 },
 { 0.992157, 0.941176, 0.807843 },
@@ -92,12 +93,6 @@ Material plastic = {
 	32,
 	0.1
 };
-static Color checkerTexture(glm::vec2 texCoord) {
-	if (((int)(texCoord.x * 20) % 2 == 0) ^ ((int)(texCoord.y * 20) % 2 == 0))
-		return Color(0, 0, 0);
-	else
-		return Color(1, 1, 1);
-}
 
 Material checker = {
 		{ 0.2, 0.2, 0.2 },
@@ -136,13 +131,19 @@ Material gold = {
 		0.1
 };
 Material jade = {
-		{0.135, 0.2225, 0.1575 },
-		{0.54, 0.89, 0.63},
-	{0.316228, 0.316228, 0.316228},
-	12.8
+		{ 0.135, 0.2225, 0.1575 },
+		{ 0.54, 0.89, 0.63 },
+		{ 0.316228, 0.316228, 0.316228 },
+		12.8
 };
+static Color checkerTexture(glm::vec2 texCoord) {
+	if (((int)(texCoord.x * 20) % 2 == 0) ^ ((int)(texCoord.y * 20) % 2 == 0))
+		return Color(0, 0, 0);
+	else
+		return Color(1, 1, 1);
+}
 
-std::vector<Triangle> model, cupModel;
+std::vector<Triangle> model;
 
 static void addPlane(Scene &scene, Vec3 lefttop, glm::vec2 uv0, Vec3 leftbottom, glm::vec2 uv1, Vec3 rightbottom, glm::vec2 uv2, Vec3 righttop, glm::vec2 uv3, Material *mat) {
 	scene.triangles.push_back(make_triangle(lefttop, uv0, leftbottom, uv1, righttop, uv3, mat));
@@ -198,7 +199,7 @@ static void setupScene(Scene &scene) {
 	glass.refractionFactor = 0.8f;
 	//scene.spheres.push_back({ { 0.0, 0.2, 0.5 }, 0.02, &glass });
 	//    scene.spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
-	scene.spheres.push_back({ { 0.0, 2, 0 }, 0.4, &chrome });
+	//scene.spheres.push_back({ { 0.0, 2, 0 }, 0.4, &chrome });
 	//    scene.spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
 	/*
 	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall1); // left
@@ -206,23 +207,31 @@ static void setupScene(Scene &scene) {
     */
 	std::cout << "OK" << std::endl;
 	readModel(scene, "2009210107_3.obj", 1.0, glm::translate(Vec3({ -1.0, 0.0, 1.5 })) * glm::rotate(90.0f, Vec3({ 0.0, 1.0, 0.0 })), &copper, model);
-	//readModel(scene, "teapot.obj", 0.3, glm::translate(Vec3({ 0.0, 0.5, -3.2 })), &glass, model);
+	//readModel(scene, "2009210107_3.obj", 1.0, glm::translate(Vec3({ -1.0, 0.0, 1.5 })) * glm::rotate(90.0f, Vec3({ 0.0, 1.0, 0.0 })), &glass, model);
+	//readModel(scene, "2009210107_3.obj", 1.0, glm::translate(Vec3({ -1.0, 0.0, 1.5 })) * glm::rotate(90.0f, Vec3({ 0.0, 1.0, 0.0 })), &chrome, model);
 
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
 	scene.camera.fovy = 70;
 	scene.bgColor = { 0.0, 0.0, 0.0 };
 	scene.lights.push_back({ LT_POINT, { -2.0, 1.0, 3.0 }, 2.0, { 0.9, 0.9, 1.0 } });
-	scene.lights.push_back({ LT_SPOT, { 0, 0, 3.0 }, 8.0, { 0.0, 0.0, 1.0 }, (float)cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.0, 0.1, -1.0 })) });
-	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ 0, 0, 1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -1.0f, 0, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
+	//scene.lights.push_back({ LT_SPOT, { 0, 0, 3.0 }, 8.0, { 0, 1, 0 }, (float)cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0, -0.1, -1.0 })) });
+	//scene.lights.push_back({ LT_SPOT, { 0, 0, 3.0 }, 8.0, { 1, 0, 0 }, (float)cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0, -0.1, -1.0 })) });
+	//scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ 0, 0, 1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
+	//scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -1.0f, 0, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 }
 
 Scene scene;
 unsigned int *pixels;
 RenderParams params;
 
+int guiMain();
+
 int main(int argc, char **argv) {
+	if (argc == 1) {
+		return guiMain();
+	}
+
 	setupScene(scene);
 
     // ffmpeg -framerate 30 -i frame%04d.png -i ../scripts/sound.wav -c:v libx264 -c:a aac -strict experimental -b:a 192k -shortest -r 30 -pix_fmt yuv420p out.mp4
@@ -253,6 +262,8 @@ int main(int argc, char **argv) {
     pixels = new unsigned int[w * h];
     scene.camera.aspect = (float)w / h;
     scene.camera.position = { 0.0, 1.3, 3.5 };
+	//scene.camera.position = { 0.0, 1.3, 10 };
+	//scene.camera.position = { 0.0, 1.3, 5 };
     scene.camera.at = { 0, 1, 0 };
     scene.camera.up = { 0, 1, 0 };
     params.width = w;
@@ -274,15 +285,13 @@ int main(int argc, char **argv) {
 
     int fps = 30, seconds = 120;
 	const int startseconds = 0;
+	//const int startseconds = 28;
+	//const int startseconds = 51;
+	//const int startseconds = 65;
 
 	seconds += startseconds;
-	time_t t = time(NULL);
     for (int i = startseconds * fps; i < fps * seconds; i++) {
-		if (i % 10 == 0) {
-			time_t t2 = time(NULL);
-			std::cout << "rendering frame #" << i << " fps=" << (float)(t2-t)/10 << std::endl;
-			t = t2;
-		}
+		std::cout << "rendering frame #" << i << std::endl;
 		scene.spheres.clear();
 		scene.triangles.clear();
         float sumlow = 0, sumhigh = 0;
@@ -296,6 +305,7 @@ int main(int argc, char **argv) {
 		{
 			float w = 5.0, front = 5.0, back = -5.0, h = 5.0, y = -0.01f;
 			addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
+			//w = 10.0; y = -5.0; addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &chrome); // center
 		}
 		float ww = 2.5f;
 		float dw = ww * 2 / nbands;
@@ -305,18 +315,19 @@ int main(int argc, char **argv) {
 			float x0 = (dw + 0.025f) * (j - nbands/2) - (dw + 0.025f) / 2;
 			float x1 = x0 + dw;
 			addCube(scene, { (x0 + x1) / 2.0f, s / 2.0f, back }, { dw, s, dw }, &barMaterials[j]);
+			//scene.spheres.push_back({ { x0 * 2.5f, (s / 2.0f) * (s / 2.0f), 0 }, s / 4.0f, &barMaterials[j] });
+			//addCube(scene, { (x0 + x1) / 2.0f, s / 2.0f, back }, { dw, s, dw }, &chrome);
         }
 		for (const Triangle &t : model)
 			scene.triangles.push_back(t);
-		for (const Triangle &t : cupModel)
-			scene.triangles.push_back(t);
-		scene.spheres.push_back({ { 0.0, 2.2, 0 }, 0.5, &chrome });
+		//scene.spheres.push_back({ { 0.0, 0.4, 1 }, 0.4, &chrome });
 
 		destroyOctree(scene);
 		buildOctree(scene);
 		float intensity = sumhigh / (nbands / 2);
 		scene.lights[0].intensity = 1.0f + 2.0f * intensity * intensity;
-		scene.lights[1].spotDir = glm::normalize(Vec3({ ww * sin(i * 6.0f * 3.14159265358979323846f / 180.0f), 0.75f, front }) - scene.lights[1].position);
+		//scene.lights[1].spotDir = glm::normalize(Vec3({ -ww * intensity, 0.75f, front }) - scene.lights[1].position);
+		//scene.lights[2].spotDir = glm::normalize(Vec3({ ww * (sumlow / (nbands / 2)), 0.75f, front }) - scene.lights[2].position);
         render(scene, pixels, params);
         int p = 0;
         for (int y = h - 1; y >= 0; y--) {
@@ -327,9 +338,13 @@ int main(int argc, char **argv) {
                 bytedata[p++] = (c & 0x0000FF); // b
             }
         }
-        sprintf(filename, "out/frame%04d.png", i);
+        sprintf(filename, "frame%04d.png", i);
         stbi_write_png(filename, w, h, 3, bytedata, 0);
-        scene.camera.position = glm::normalize(glm::rotateY(scene.camera.position, 0.2f * 3.14159265358979323846f / 180.0f)) * (2.5f + intensity * 2.5f);
+		scene.camera.position = glm::rotateY(scene.camera.position, 0.2f * 3.14159265358979323846f / 180.0f);
+		//scene.camera.position = glm::rotateY(scene.camera.position, -0.2f * 3.14159265358979323846f / 180.0f);
+		//scene.camera.position.z -= 0.01f;
+		//scene.camera.position = glm::rotateY(scene.camera.position, 2.0f * 3.14159265358979323846f / 180.0f);
+		//scene.camera.position = glm::rotateY(scene.camera.position, 0.2f * 3.14159265358979323846f / 180.0f);
     }
 	return 0;
 }
@@ -398,6 +413,33 @@ static void setupRenderParams() {
 	destroyOctree(scene);
 	if (params.enableOctree)
 		buildOctree(scene);
+}
+
+static void setupGUIScene(Scene &scene) {
+	checker.texFunc = checkerTexture;
+	wall1.texFunc = [](glm::vec2 texCoord) { return Color(1, texCoord.y*texCoord.y, 0); };
+	wall2.texFunc = [](glm::vec2 texCoord) { return Color(0, texCoord.y*texCoord.y, 1); };
+	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y*texCoord.y, 0, 1); };
+	glass.refract = true;
+	glass.refraction = 1.5f;
+	glass.refractionFactor = 0.5f;
+	scene.spheres.push_back({ { 0.25, 0.1, 0.0 }, 0.1, &copper });
+	scene.spheres.push_back({ { -0.4, 0.2, 0.0 }, 0.2, &glass });
+
+	float w = 5.0, front = 2.0, back = -2.0, h = 5.0, y = -0.01f;
+	addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &wall2); // floor
+	addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &checker); // center
+	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall1); // left
+	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall3); // right
+	readModel(scene, "2009210107_3.obj", 1.0, glm::rotate(90.0f, Vec3({ 0.0, 1.0, 0.0 })), &chrome, scene.triangles);
+
+	scene.camera.zNear = 0.01;
+	scene.camera.zFar = 10.0;
+	scene.camera.fovy = 60;
+	scene.bgColor = { 0.0, 0.0, 0.0 };
+	scene.lights.push_back({ LT_POINT, { 0.0, 0.5, 0.0 }, 1.0, { 1.0, 1.0, 1.0 } });
+	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 1.0, 1.0} });
+	scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, (float)cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
 }
 
 static void renderPreview() {
@@ -529,8 +571,8 @@ static int guiMain() {
 	HWND hCtrl0_11 = CreateWindowEx(0, WC_STATIC, TEXT("Y:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 105, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_12 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 41, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_5 = CreateWindowEx(0, WC_EDIT, TEXT("0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSX, hInst, 0);
-	HWND hCtrl0_13 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSY, hInst, 0);
-	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
+	HWND hCtrl0_13 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSY, hInst, 0);
+	HWND hCtrl0_14 = CreateWindowEx(0, WC_EDIT, TEXT("1.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 41, 53, 20, hwnd, (HMENU)ID_CAMPOSZ, hInst, 0);
 	HWND hCtrl0_15 = CreateWindowEx(0, WC_EDIT, TEXT("720"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 195, 187, 75, 21, hwnd, (HMENU)ID_RESH, hInst, 0);
 	HWND hCtrl0_16 = CreateWindowEx(0, WC_EDIT, TEXT("2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 98, 215, 75, 21, hwnd, (HMENU)ID_NRAYBOUNCE, hInst, 0);
 	HWND hCtrl0_17 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Look At"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 73, 78, 15, hwnd, (HMENU)0, hInst, 0);
@@ -538,7 +580,7 @@ static int guiMain() {
 	HWND hCtrl0_20 = CreateWindowEx(0, WC_STATIC, TEXT("Y:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 105, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_21 = CreateWindowEx(0, WC_STATIC, TEXT("Z:"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 188, 98, 12, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_18 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 98, 53, 20, hwnd, (HMENU)ID_CAMATX, hInst, 0);
-	HWND hCtrl0_22 = CreateWindowEx(0, WC_EDIT, TEXT("0.2"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 98, 53, 20, hwnd, (HMENU)ID_CAMATY, hInst, 0);
+	HWND hCtrl0_22 = CreateWindowEx(0, WC_EDIT, TEXT("0.5"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 120, 98, 53, 20, hwnd, (HMENU)ID_CAMATY, hInst, 0);
 	HWND hCtrl0_23 = CreateWindowEx(0, WC_EDIT, TEXT("0.1"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 203, 98, 53, 20, hwnd, (HMENU)ID_CAMATZ, hInst, 0);
 	HWND hCtrl0_24 = CreateWindowEx(0, WC_STATIC, TEXT("Camera Up Vector"), WS_VISIBLE | WS_CHILD | WS_GROUP | SS_LEFT, 8, 130, 89, 15, hwnd, (HMENU)0, hInst, 0);
 	HWND hCtrl0_25 = CreateWindowEx(0, WC_EDIT, TEXT("0.0"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 23, 154, 53, 20, hwnd, (HMENU)ID_CAMUPX, hInst, 0);
@@ -551,7 +593,7 @@ static int guiMain() {
 
 	ctrlWnd = hwnd;
 	renderWnd = CreateWindowEx(WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME, TEXT("WndClass1"), TEXT("Preview"), WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, hInst, 0);
-	setupScene(scene);
+	setupGUIScene(scene);
 
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
@@ -562,5 +604,8 @@ static int guiMain() {
 
 	return (int)msg.wParam;
 }
-
+#else
+int guiMain() {
+	return 0;
+}
 #endif
