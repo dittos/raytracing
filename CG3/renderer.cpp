@@ -102,9 +102,11 @@ void buildOctree(Scene &scene) {
 	for (int i = 0; i < scene.triangles.size(); i++)
 		scene.octreeRoot.objects.push_back(i);
 	splitOctreeNode(scene, &scene.octreeRoot, 0);
+	/*
 	std::cout << "built octree: empty=" << stat_emptyNode <<
 		" overDepth=" << stat_overDepth <<
 		" overMax=" << stat_overMax << std::endl;
+	*/
 }
 
 static void deleteNode(OctreeNode *node) {
@@ -284,32 +286,31 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 	}
 	Color c = scene.bgColor * m->ambientFactor * texture;
 	Vec3 reflectionDir = glm::normalize(glm::reflect(ray.dir, norm));
-	if (!m->refract) {
-		for (const Light &light : scene.lights) {
-			Vec3 lightDir;
-			if (light.type == LT_POINT) {
-				lightDir = glm::normalize(light.position - pos);
-			}
-			else if (light.type == LT_DIRECTIONAL) {
-				lightDir = -light.position;
-			}
-			else if (light.type == LT_SPOT) {
-				lightDir = glm::normalize(light.position - pos);
-				if (glm::dot(-lightDir, light.spotDir) < light.spotCutoff)
-					continue;
-			}
+	for (const Light &light : scene.lights) {
+		Vec3 lightDir;
+		if (light.type == LT_POINT) {
+			lightDir = glm::normalize(light.position - pos);
+		}
+		else if (light.type == LT_DIRECTIONAL) {
+			lightDir = -light.position;
+		}
+		else if (light.type == LT_SPOT) {
+			lightDir = glm::normalize(light.position - pos);
+			float p = glm::dot(-lightDir, light.spotDir);
+			if (p < light.spotCutoff)
+				continue;
+		}
 
-			float s = glm::dot(norm, lightDir);
-			if (s > 0.0f && !isShaded(scene, params, { pos, lightDir }, objectID)) {
-				Color diffuse(s * light.intensity * texture);
-				c += diffuse * light.color * m->diffuseFactor;
-			}
+		float s = glm::dot(norm, lightDir);
+		if (s > 0.0f && !isShaded(scene, params, { pos, lightDir }, objectID)) {
+			Color diffuse(s * light.intensity * texture);
+			c += diffuse * light.color * m->diffuseFactor;
+		}
 
-			float t = glm::dot(lightDir, reflectionDir);
-			if (t > 0.0f && !isShaded(scene, params, { pos, reflectionDir }, objectID)) {
-				Color specular = Color(powf(t, m->shininess) * light.intensity);
-				c += specular * light.color * m->specularFactor;
-			}
+		float t = glm::dot(lightDir, reflectionDir);
+		if (t > 0.0f && !isShaded(scene, params, { pos, reflectionDir }, objectID)) {
+			Color specular = Color(powf(t, m->shininess) * light.intensity);
+			c += specular * light.color * m->specularFactor;
 		}
 	}
 
@@ -320,13 +321,15 @@ Color _renderPixel(const Scene &scene, const RenderParams &params, const Ray &ra
 			Vec3 N = norm;
 			if (isInside)
 				N *= -1;
-			float cosI = -glm::dot(N, ray.dir);
+			float cosI = glm::dot(N, ray.dir);
 			float cosT2 = 1.0f - n * n * (1.0f - cosI * cosI);
+			Color r;
 			if (cosT2 > 0.0f) {
 				Vec3 refractionDir = n * ray.dir + (n * cosI - sqrtf(cosT2)) * N;
 				// For refraction we don't exclude current object
-				c += _renderPixel(scene, params, { pos + refractionDir * 1e-5f, refractionDir }, {}, depth + 1, m->refraction) * m->refractionFactor;
+				r = _renderPixel(scene, params, { pos + refractionDir * 1e-5f, refractionDir }, {}, depth + 1, m->refraction) * m->refractionFactor;
 			}
+			c = c * (1 - m->refractionFactor) + r;
 		}
 	}
 	return glm::clamp(c, 0.0f, 1.0f);

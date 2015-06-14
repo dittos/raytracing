@@ -9,6 +9,7 @@
 #include <fstream>
 #include <future>
 #include "glm/geometric.hpp"
+#include "glm/gtx/transform.hpp"
 #include "glm/gtx/rotate_vector.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -29,7 +30,7 @@ static Triangle make_triangle(Vec3 v0, glm::vec2 t0, Vec3 v1, glm::vec2 t1, Vec3
 	return t;
 }
 
-static void readModel(Scene &scene, std::string path, float scaleFactor, Material *material) {
+static void readModel(Scene &scene, std::string path, float scaleFactor, glm::mat4x4 &rotation, Material *material, std::vector<Triangle> &triangles) {
 	std::ifstream f(path);
 	std::string line;
 	std::vector<Vec3> vs;
@@ -41,7 +42,7 @@ static void readModel(Scene &scene, std::string path, float scaleFactor, Materia
 		if (type == "v") {
 			Vec3 v;
 			ss >> v.x >> v.y >> v.z;
-			vs.push_back(v * scaleFactor);
+			vs.push_back(Vec3(rotation * glm::vec4({ v.x, v.y, v.z, 1.0f }) * scaleFactor));
 		}
 		else if (type == "f") {
 			std::string v_str;
@@ -55,7 +56,7 @@ static void readModel(Scene &scene, std::string path, float scaleFactor, Materia
 				f.push_back(v);
 			}
 			for (int i = 0; i < f.size() - 2; i++) {
-				scene.triangles.push_back(make_triangle(vs[f[i]], vs[f[i + 1]], vs[f[i + 2]], material));
+				triangles.push_back(make_triangle(vs[f[i]], vs[f[i + 1]], vs[f[i + 2]], material));
 			}
 		}
 	}
@@ -71,18 +72,25 @@ Material chrome = { { 0.25, 0.25, 0.25 },
 { 0.4, 0.4, 0.4 },
 { 0.774597, 0.774597, 0.774597 },
 76.8,
-0.3 };
-Material glass = { { 0.25, 0.25, 0.25 },
-{ 0.4, 0.4, 0.4 },
+0.4 };
+Material glass = { { 0, 0, 0 },
+{ 0.0, 0.5, 0.0 },
 { 0.774597, 0.774597, 0.774597 },
-76.8,
-0.0 };
+1,
+0.2 };
 Material obsidian = {
 		{ 0.05375, 0.05, 0.06625 },
 		{ 0.18275, 0.17, 0.22525 },
 		{ 0.332741, 0.328634, 0.346435 },
 		38.4,
 		0.0
+};
+Material plastic = {
+		{ 0, 0, 0 },
+		{0.01, 0.01, 0.01 },
+		{ 0.5, 0.5, 0.5 },
+	32,
+	0.1
 };
 static Color checkerTexture(glm::vec2 texCoord) {
 	if (((int)(texCoord.x * 20) % 2 == 0) ^ ((int)(texCoord.y * 20) % 2 == 0))
@@ -92,8 +100,8 @@ static Color checkerTexture(glm::vec2 texCoord) {
 }
 
 Material checker = {
-		{ 0, 0, 0 },
-		{ 1, 1, 1 },
+		{ 0.2, 0.2, 0.2 },
+		{ 0.8, 0.8, 0.8 },
 		{ 0.332741, 0.328634, 0.346435 },
 		38.4,
 		0.0
@@ -120,45 +128,94 @@ Material wall3 = {
 		38.4,
 		0.0
 };
+Material gold = {
+		{ 0.24725, 0.1995, 0.0745 },
+		{ 0.75164, 0.60648, 0.22648 },
+		{ 0.628281, 0.555802, 0.366065 },
+		51.2,
+		0.1
+};
+Material jade = {
+		{0.135, 0.2225, 0.1575 },
+		{0.54, 0.89, 0.63},
+	{0.316228, 0.316228, 0.316228},
+	12.8
+};
+
+std::vector<Triangle> model, cupModel;
 
 static void addPlane(Scene &scene, Vec3 lefttop, glm::vec2 uv0, Vec3 leftbottom, glm::vec2 uv1, Vec3 rightbottom, glm::vec2 uv2, Vec3 righttop, glm::vec2 uv3, Material *mat) {
 	scene.triangles.push_back(make_triangle(lefttop, uv0, leftbottom, uv1, righttop, uv3, mat));
 	scene.triangles.push_back(make_triangle(righttop, uv3, leftbottom, uv1, rightbottom, uv2, mat));
 }
 
+static void addCube(Scene &scene, Vec3 center, Vec3 size, Material *mat) {
+	Vec3 half = size / 2.0f;
+	// front
+	addPlane(scene,
+		{ center.x - half.x, center.y + half.y, center.z + half.z }, { 0, 0 },
+		{ center.x - half.x, center.y - half.y, center.z + half.z }, { 0, 1 },
+		{ center.x + half.x, center.y - half.y, center.z + half.z }, { 1, 1 },
+		{ center.x + half.x, center.y + half.y, center.z + half.z }, { 1, 0 },
+		mat);
+	// back
+	addPlane(scene,
+		{ center.x + half.x, center.y + half.y, center.z - half.z }, { 0, 0 },
+		{ center.x + half.x, center.y - half.y, center.z - half.z }, { 0, 1 },
+		{ center.x - half.x, center.y - half.y, center.z - half.z }, { 1, 1 },
+		{ center.x - half.x, center.y + half.y, center.z - half.z }, { 1, 0 },
+		mat);
+	// top
+	addPlane(scene,
+		{ center.x - half.x, center.y + half.y, center.z - half.z }, { 0, 0 },
+		{ center.x - half.x, center.y + half.y, center.z + half.z }, { 0, 1 },
+		{ center.x + half.x, center.y + half.y, center.z + half.z }, { 1, 1 },
+		{ center.x + half.x, center.y + half.y, center.z - half.z }, { 1, 0 },
+		mat);
+	// left
+	addPlane(scene,
+		{ center.x - half.x, center.y + half.y, center.z - half.z }, { 0, 0 },
+		{ center.x - half.x, center.y - half.y, center.z - half.z }, { 0, 1 },
+		{ center.x - half.x, center.y - half.y, center.z + half.z }, { 1, 1 },
+		{ center.x - half.x, center.y + half.y, center.z + half.z }, { 1, 0 },
+		mat);
+	// right
+	addPlane(scene,
+		{ center.x + half.x, center.y + half.y, center.z + half.z }, { 0, 0 },
+		{ center.x + half.x, center.y - half.y, center.z + half.z }, { 0, 1 },
+		{ center.x + half.x, center.y - half.y, center.z - half.z }, { 1, 1 },
+		{ center.x + half.x, center.y + half.y, center.z - half.z }, { 1, 0 },
+		mat);
+}
+
 static void setupScene(Scene &scene) {
 	checker.texFunc = checkerTexture;
 	wall1.texFunc = [](glm::vec2 texCoord) { return Color(1, texCoord.y*texCoord.y, 0); };
 	wall2.texFunc = [](glm::vec2 texCoord) { return Color(0, texCoord.y*texCoord.y, 1); };
-	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y*texCoord.y, 0, 1); };
+	wall3.texFunc = [](glm::vec2 texCoord) { return Color(texCoord.y, 0, 1); };
 	glass.refract = true;
 	glass.refraction = 1.3f;
-	glass.refractionFactor = 1.0f;
+	glass.refractionFactor = 0.8f;
 	//scene.spheres.push_back({ { 0.0, 0.2, 0.5 }, 0.02, &glass });
 	//    scene.spheres.push_back({{-0.45, 0.1, -0.25}, 0.05, &copper});
-	scene.spheres.push_back({ { 0.25, 0.1, 0.0 }, 0.1, &chrome });
+	scene.spheres.push_back({ { 0.0, 2, 0 }, 0.4, &chrome });
 	//    scene.spheres.push_back({{-0.2, 0.1, 0.0}, 0.05, &chrome});
-
-	float w = 5.0, front = 2.0, back = -2.0, h = 5.0, y = -0.01f;
-	addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
-    /*
-	addPlane(scene, { -w, h, back }, { 0, 0 }, { -w, y, back }, { 0, 1 }, { w, y, back }, { 1, 1 }, { w, h, back }, { 1, 0 }, &wall2); // center
+	/*
 	addPlane(scene, { -w, h, front }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { -w, y, back }, { 1, 1 }, { -w, h, back }, { 1, 0 }, &wall1); // left
 	addPlane(scene, { w, h, back }, { 0, 0 }, { w, y, back }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, h, front }, { 1, 0 }, &wall3); // right
     */
-	//readModel(scene, "2009210107_3.obj", 1.0, &glass);
+	std::cout << "OK" << std::endl;
+	readModel(scene, "2009210107_3.obj", 1.0, glm::translate(Vec3({ -1.0, 0.0, 1.5 })) * glm::rotate(90.0f, Vec3({ 0.0, 1.0, 0.0 })), &copper, model);
+	//readModel(scene, "teapot.obj", 0.3, glm::translate(Vec3({ 0.0, 0.5, -3.2 })), &glass, model);
 
 	scene.camera.zNear = 0.01;
 	scene.camera.zFar = 10.0;
-	scene.camera.fovy = 60;
+	scene.camera.fovy = 70;
 	scene.bgColor = { 0.0, 0.0, 0.0 };
-	scene.lights.push_back({ LT_POINT, { 0.0, 0.5, 0.0 }, 1.0, { 1.0, 1.0, 1.0 } });
-	//    scene.lights.push_back({LT_POINT, {0.5, 0.5, 0.5}, 0.5, {1.0, 0.0, 0.0}});
-	//    scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, 1.0f})), 1.0, {0.0, 1.0, 1.0}});
-	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({0.5f, -0.5f, -1.0f})), 1.0, {1.0, 0.0, 1.0}});
-	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ 0, 0, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	//scene.lights.push_back({LT_DIRECTIONAL, glm::normalize(Vec3({ -0.5f, -0.5f, -1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
-	//scene.lights.push_back({ LT_SPOT, { -0.05, 0.2, 1.0 }, 3.0, { 0.0, 0.0, 1.0 }, (float)cos(3 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.1, 0.0, -1.0 })) });
+	scene.lights.push_back({ LT_POINT, { -2.0, 1.0, 3.0 }, 2.0, { 0.9, 0.9, 1.0 } });
+	scene.lights.push_back({ LT_SPOT, { 0, 0, 3.0 }, 8.0, { 0.0, 0.0, 1.0 }, (float)cos(10 * 3.14159265358979323846f / 180.0f), glm::normalize(Vec3({ 0.0, 0.1, -1.0 })) });
+	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ 0, 0, 1.0f })), 2.0, { 1.0, 1.0, 1.0 } });
+	scene.lights.push_back({ LT_DIRECTIONAL, glm::normalize(Vec3({ -1.0f, 0, 0.0f })), 1.0, { 1.0, 1.0, 1.0 } });
 }
 
 Scene scene;
@@ -166,24 +223,42 @@ unsigned int *pixels;
 RenderParams params;
 
 int main(int argc, char **argv) {
+	setupScene(scene);
+
     // ffmpeg -framerate 30 -i frame%04d.png -i ../scripts/sound.wav -c:v libx264 -c:a aac -strict experimental -b:a 192k -shortest -r 30 -pix_fmt yuv420p out.mp4
     int x, y, n;
     unsigned char *data = stbi_load("../scripts/spectrogram.png", &x, &y, &n, 0);
+	y /= 2;
+	float *freqdata = new float[x * y];
+	int ii = 0;
+	for (int i = 0; i < x; i++) {
+		for (int j = 0; j < y; j++) {
+			freqdata[ii++] = (float)data[(j * x + i) * 3] / 255.0f;
+		}
+	}
+	const int nbands = 16;
+	float *rfreqdata = new float[x * nbands];
+	for (int i = 0; i < x; i++) {
+		for (int b = 0; b < nbands; b++) {
+			float sum = 0;
+			for (int j = 0; j < y / nbands; j++) {
+				sum += freqdata[i * y + b * (y / nbands) + j];
+			}
+			rfreqdata[i * nbands + (nbands - b - 1)] = sum / (y / nbands);
+		}
+	}
 
-    setupScene(scene);
-
-    int w = 320;
-    int h = 180;
-    delete pixels;
+    int w = 1280;
+    int h = 720;
     pixels = new unsigned int[w * h];
     scene.camera.aspect = (float)w / h;
-    scene.camera.position = { 0.0, 0.5, 1.5 };
-    scene.camera.at = { 0, 0.3, 0 };
+    scene.camera.position = { 0.0, 1.3, 3.5 };
+    scene.camera.at = { 0, 1, 0 };
     scene.camera.up = { 0, 1, 0 };
     params.width = w;
     params.height = h;
     params.enableOctree = true;
-    params.depthLimit = 0;
+    params.depthLimit = 2;
     params.threads = 8;
     destroyOctree(scene);
     if (params.enableOctree)
@@ -191,18 +266,57 @@ int main(int argc, char **argv) {
     unsigned char *bytedata = new unsigned char[params.width * params.height * 3]; // RGB
     char filename[20];
 
-    scene.camera.position = glm::rotateY(scene.camera.position, -20.0f * 3.14159265358979323846f / 180.0f);
-    const int fps = 30, seconds = 10;
-    for (int i = 0; i < fps * seconds; i++) {
-        std::cout << "rendering frame #" << i << std::endl;
-        scene.spheres.clear();
-        int sum = 0;
-        for (int j = y/2 - 1; j >= 0; j--) {
-            int s = data[(j * x + i) * 3];
-            sum += s;
-            scene.spheres.push_back({ {0.03 * (y/2 - j - y/4), 0.02 + (s / 255.0), 0}, 0.02, &chrome });
+	Material *barMaterials = new Material[nbands];
+	for (int i = 0; i < nbands; i++) {
+		barMaterials[i] = chrome;
+		barMaterials[i].diffuseFactor = { 0.6, 0.6 * ((float)i / 8), 0 };
+	}
+
+    int fps = 30, seconds = 120;
+	const int startseconds = 0;
+
+	seconds += startseconds;
+	time_t t = time(NULL);
+    for (int i = startseconds * fps; i < fps * seconds; i++) {
+		if (i % 10 == 0) {
+			time_t t2 = time(NULL);
+			std::cout << "rendering frame #" << i << " fps=" << (float)(t2-t)/10 << std::endl;
+			t = t2;
+		}
+		scene.spheres.clear();
+		scene.triangles.clear();
+        float sumlow = 0, sumhigh = 0;
+		for (int j = 0; j < nbands; j++) {
+			float s = rfreqdata[i * nbands + j];
+			if (j >= nbands / 2)
+				sumhigh += s;
+			else
+				sumlow += s;
+		}
+		{
+			float w = 5.0, front = 5.0, back = -5.0, h = 5.0, y = -0.01f;
+			addPlane(scene, { -w, y, back }, { 0, 0 }, { -w, y, front }, { 0, 1 }, { w, y, front }, { 1, 1 }, { w, y, back }, { 1, 0 }, &checker); // floor
+		}
+		float ww = 2.5f;
+		float dw = ww * 2 / nbands;
+		float back = -dw/2, front = back + dw;
+		for (int j = 0; j < nbands; j++) {
+			float s = 2.0f * rfreqdata[i * nbands + j];
+			float x0 = (dw + 0.025f) * (j - nbands/2) - (dw + 0.025f) / 2;
+			float x1 = x0 + dw;
+			addCube(scene, { (x0 + x1) / 2.0f, s / 2.0f, back }, { dw, s, dw }, &barMaterials[j]);
         }
-        scene.lights[0].intensity = 2.0f * (float)sum / (255 * y/2);
+		for (const Triangle &t : model)
+			scene.triangles.push_back(t);
+		for (const Triangle &t : cupModel)
+			scene.triangles.push_back(t);
+		scene.spheres.push_back({ { 0.0, 2.2, 0 }, 0.5, &chrome });
+
+		destroyOctree(scene);
+		buildOctree(scene);
+		float intensity = sumhigh / (nbands / 2);
+		scene.lights[0].intensity = 1.0f + 2.0f * intensity * intensity;
+		scene.lights[1].spotDir = glm::normalize(Vec3({ ww * sin(i * 6.0f * 3.14159265358979323846f / 180.0f), 0.75f, front }) - scene.lights[1].position);
         render(scene, pixels, params);
         int p = 0;
         for (int y = h - 1; y >= 0; y--) {
@@ -213,9 +327,9 @@ int main(int argc, char **argv) {
                 bytedata[p++] = (c & 0x0000FF); // b
             }
         }
-        sprintf(filename, "frame%04d.png", i);
+        sprintf(filename, "out/frame%04d.png", i);
         stbi_write_png(filename, w, h, 3, bytedata, 0);
-        scene.camera.position = glm::rotateY(scene.camera.position, 0.1f * 3.14159265358979323846f / 180.0f);
+        scene.camera.position = glm::normalize(glm::rotateY(scene.camera.position, 0.2f * 3.14159265358979323846f / 180.0f)) * (2.5f + intensity * 2.5f);
     }
 	return 0;
 }
@@ -372,7 +486,7 @@ LRESULT CALLBACK WndProc2(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-static void guiMain() {
+static int guiMain() {
 	HINSTANCE hInst = GetModuleHandle(0);
 	WNDCLASSEX wcex;
 	ZeroMemory(&wcex, sizeof wcex);
